@@ -45,6 +45,15 @@ export const campaignApi = {
       ai_synthesis: string
       stopped_reason: string
     }>(`/campaigns/${id}/ai/auto`, { max_phases: maxPhases }),
+
+  // Phase run endpoint (runs in API process for live events)
+  runPhase: (id: string, phaseType: string) =>
+    api.post<{ status: string; message: string; phase_type: string }>(
+      `/campaigns/${id}/phases/${phaseType}/run`
+    ),
+
+  getRunningPhase: (id: string) =>
+    api.get<{ running: string | null }>(`/campaigns/${id}/phases/running`),
 }
 
 export const toolApi = {

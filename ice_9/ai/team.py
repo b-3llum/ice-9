@@ -169,6 +169,8 @@ class TeamOrchestrator:
         model: Optional[str] = None,
     ) -> AgentResult:
         """Execute a single agent."""
+        from ice_9.core.events import event_bus, Event, EventType
+
         started = datetime.utcnow()
 
         # Build provider fallback chain
@@ -196,6 +198,16 @@ class TeamOrchestrator:
         messages = agent.build_messages(prompt, context)
         use_model = model or agent.model
 
+        event_bus.emit(Event(
+            type=EventType.AI_REQUEST,
+            data={
+                "agent": agent.role.value,
+                "provider": agent.provider_name,
+                "model": use_model or (primary.default_model if primary else ""),
+                "prompt_preview": prompt[:200],
+            },
+        ))
+
         try:
             response = self.fallback_client.chat_with_fallback(
                 providers=providers,
@@ -204,6 +216,17 @@ class TeamOrchestrator:
                 temperature=agent.temperature,
                 max_tokens=agent.max_tokens,
             )
+
+            event_bus.emit(Event(
+                type=EventType.AI_RESPONSE,
+                data={
+                    "agent": agent.role.value,
+                    "provider": response.provider,
+                    "model": response.model,
+                    "content_length": len(response.content),
+                    "content_preview": response.content[:200],
+                },
+            ))
 
             return AgentResult(
                 agent_role=agent.role.value,

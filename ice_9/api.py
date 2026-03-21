@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 from ice_9.config.settings import load_settings
 from ice_9.core.audit import AuditLogger
@@ -275,6 +279,93 @@ async def api_complete_phase(campaign_id: str, phase_type: str):
         return {"phase_id": phase.id, "status": phase.status.value}
     except (InvalidTransition, ValueError) as e:
         raise HTTPException(400, str(e))
+
+
+# --- Phase run endpoint (runs in API process for EventBus visibility) ---
+
+# Track running phases to prevent double-runs
+_running_phases: dict[str, str] = {}  # campaign_id -> phase_type
+_running_lock = threading.Lock()
+
+
+class PhaseRunResponse(BaseModel):
+    status: str
+    message: str
+    phase_type: str
+
+
+@app.post(
+    "/campaigns/{campaign_id}/phases/{phase_type}/run",
+    dependencies=[Depends(verify_api_key)],
+    response_model=PhaseRunResponse,
+)
+async def api_run_phase(campaign_id: str, phase_type: str):
+    """Run a phase module in a background thread (events visible via SSE)."""
+    from ice_9.phases import get_phase_modules
+    from ice_9.tools.custom import register_defaults
+
+    store = get_store()
+    campaign = store.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    pt = _resolve_phase(phase_type)
+
+    # Check if already running
+    with _running_lock:
+        running = _running_phases.get(campaign_id)
+        if running:
+            raise HTTPException(409, f"Phase '{running}' already running for this campaign")
+        _running_phases[campaign_id] = pt.value
+
+    register_defaults()
+    phase_modules = get_phase_modules()
+    module_class = phase_modules.get(pt)
+    if not module_class:
+        with _running_lock:
+            _running_phases.pop(campaign_id, None)
+        raise HTTPException(400, f"No automated module for phase '{phase_type}'")
+
+    if not campaign.rules_of_engagement.scope:
+        with _running_lock:
+            _running_phases.pop(campaign_id, None)
+        raise HTTPException(400, "Campaign has no scope defined")
+
+    audit = get_audit()
+
+    def run_phase():
+        try:
+            # Each thread needs its own Store (SQLite thread safety)
+            thread_store = Store(get_settings().db_path, check_same_thread=False)
+            thread_campaign = thread_store.get_campaign(campaign_id)
+            if not thread_campaign:
+                return
+            module = module_class(store=thread_store, audit=audit)
+            module.run(thread_campaign)
+            thread_store.close()
+        finally:
+            with _running_lock:
+                _running_phases.pop(campaign_id, None)
+
+    thread = threading.Thread(target=run_phase, daemon=True)
+    thread.start()
+
+    return PhaseRunResponse(
+        status="started",
+        message=f"Phase '{pt.value}' started in background",
+        phase_type=pt.value,
+    )
+
+
+@app.get(
+    "/campaigns/{campaign_id}/phases/running",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_running_phase(campaign_id: str):
+    """Check if a phase is currently running for this campaign."""
+    with _running_lock:
+        running = _running_phases.get(campaign_id)
+    return {"running": running}
 
 
 # --- Findings endpoints ---
@@ -608,6 +699,70 @@ async def api_list_providers():
     ]
 
 
+# --- Event stream endpoints ---
+
+
+@app.get("/events/stream")
+async def api_event_stream(campaign_id: Optional[str] = Query(default=None)):
+    """Server-Sent Events stream for real-time observability."""
+    from ice_9.core.events import event_bus, Event
+
+    queue: asyncio.Queue[Event] = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def on_event(event: Event) -> None:
+        # Pass through events with null campaign_id (tool events within a phase)
+        # Only filter out events explicitly belonging to a different campaign
+        if campaign_id and event.campaign_id is not None and event.campaign_id != campaign_id:
+            return
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    unsubscribe = event_bus.subscribe(on_event)
+
+    async def generate():
+        try:
+            # Initial comment to trigger EventSource onopen
+            yield ": connected\n\n"
+
+            # Send recent history for catch-up
+            for event in event_bus.history(limit=20, campaign_id=campaign_id):
+                yield event.to_sse()
+
+            # Stream live events with periodic keepalive
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield event.to_sse()
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            unsubscribe()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/events/recent")
+async def api_events_recent(
+    campaign_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, le=200),
+):
+    """Get recent events from the history buffer."""
+    from ice_9.core.events import event_bus
+
+    events = event_bus.history(limit=limit, campaign_id=campaign_id)
+    return [e.to_dict() for e in events]
+
+
 # --- Helpers ---
 
 
@@ -634,6 +789,7 @@ def _resolve_phase(phase_str: str) -> PhaseType:
     # Friendly name map
     name_map = {
         "recon": PhaseType.RECON,
+        "resource_dev": PhaseType.RESOURCE_DEV,
         "initial_access": PhaseType.INITIAL_ACCESS,
         "execution": PhaseType.EXECUTION,
         "persistence": PhaseType.PERSISTENCE,

@@ -110,6 +110,8 @@ class PhaseModule(ABC):
 
     def run(self, campaign: Campaign) -> list[ToolResult]:
         """Execute the full phase workflow."""
+        from ice_9.core.events import event_bus, Event, EventType
+
         # Check prerequisites
         missing = self.check_prerequisites()
         if missing:
@@ -133,9 +135,23 @@ class PhaseModule(ABC):
             details={"phase": self.phase_type.value, "name": self.name},
         )
 
+        event_bus.emit(Event(
+            type=EventType.PHASE_START,
+            campaign_id=campaign.id,
+            phase_id=phase.id,
+            data={"phase": self.phase_type.value, "name": self.name},
+        ))
+
         # Plan tasks
         task_plans = self.plan(campaign)
         print_info(f"Planned {len(task_plans)} tasks for {self.name}")
+
+        event_bus.emit(Event(
+            type=EventType.PHASE_PLAN,
+            campaign_id=campaign.id,
+            phase_id=phase.id,
+            data={"task_count": len(task_plans), "phase": self.name},
+        ))
 
         # Execute tasks
         results: list[ToolResult] = []
@@ -150,6 +166,13 @@ class PhaseModule(ABC):
                 continue
 
             print_info(f"  [{i}/{len(task_plans)}] Running {tool_name} → {target}")
+
+            event_bus.emit(Event(
+                type=EventType.PHASE_TASK_START,
+                campaign_id=campaign.id,
+                phase_id=phase.id,
+                data={"tool": tool_name, "target": target, "task_num": i, "total_tasks": len(task_plans)},
+            ))
 
             # Execute tool
             result = tool.run(target, **params)
@@ -175,6 +198,17 @@ class PhaseModule(ABC):
             else:
                 print_error(f"    Failed: {result.stderr[:200]}")
 
+            event_bus.emit(Event(
+                type=EventType.PHASE_TASK_COMPLETE,
+                campaign_id=campaign.id,
+                phase_id=phase.id,
+                data={
+                    "tool": tool_name, "target": target,
+                    "success": result.success, "duration": result.duration_seconds,
+                    "task_num": i, "total_tasks": len(task_plans),
+                },
+            ))
+
             self.audit.log(
                 "task.complete",
                 campaign_id=campaign.id,
@@ -192,6 +226,12 @@ class PhaseModule(ABC):
         for finding in findings:
             finding.phase_id = phase.id
             self.store.save_finding(finding)
+            event_bus.emit(Event(
+                type=EventType.FINDING_NEW,
+                campaign_id=campaign.id,
+                phase_id=phase.id,
+                data={"title": finding.title, "severity": finding.severity.value},
+            ))
 
         if findings:
             print_success(f"Generated {len(findings)} findings")
@@ -205,6 +245,13 @@ class PhaseModule(ABC):
             phase_id=phase.id,
             details={"findings": len(findings), "tasks": len(task_plans)},
         )
+
+        event_bus.emit(Event(
+            type=EventType.PHASE_COMPLETE,
+            campaign_id=campaign.id,
+            phase_id=phase.id,
+            data={"phase": self.name, "findings": len(findings), "tasks": len(task_plans)},
+        ))
 
         return results
 

@@ -101,28 +101,64 @@ class LLMClient:
         model: str,
         temperature: float,
     ) -> LLMResponse:
-        """Call Ollama API."""
+        """Call Ollama API with streaming for real-time token visibility."""
+        from ice_9.core.events import event_bus, Event, EventType
+
         url = f"{provider.base_url}/api/chat"
         payload = {
             "model": model,
             "messages": messages,
-            "stream": False,
+            "stream": True,
             "options": {"temperature": temperature},
         }
 
-        response = self._http.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        content_parts: list[str] = []
+        prompt_tokens = 0
+        completion_tokens = 0
+        chunk_buffer: list[str] = []
+
+        with self._http.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+                token = chunk.get("message", {}).get("content", "")
+                if token:
+                    content_parts.append(token)
+                    chunk_buffer.append(token)
+
+                    # Emit AI_CHUNK every ~10 tokens to avoid flooding
+                    if len(chunk_buffer) >= 10:
+                        event_bus.emit(Event(
+                            type=EventType.AI_CHUNK,
+                            data={"model": model, "provider": provider.name, "tokens": "".join(chunk_buffer)},
+                        ))
+                        chunk_buffer = []
+
+                if chunk.get("done"):
+                    prompt_tokens = chunk.get("prompt_eval_count", 0)
+                    completion_tokens = chunk.get("eval_count", 0)
+
+        # Flush remaining buffer
+        if chunk_buffer:
+            event_bus.emit(Event(
+                type=EventType.AI_CHUNK,
+                data={"model": model, "provider": provider.name, "tokens": "".join(chunk_buffer)},
+            ))
 
         return LLMResponse(
-            content=data.get("message", {}).get("content", ""),
+            content="".join(content_parts),
             model=model,
             provider=provider.name,
             usage={
-                "prompt_tokens": data.get("prompt_eval_count", 0),
-                "completion_tokens": data.get("eval_count", 0),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
             },
-            raw=data,
         )
 
     def _chat_openai_compat(

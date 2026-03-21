@@ -5,6 +5,7 @@ import { CampaignStatusBadge } from './StatusBadge'
 import PhaseTimeline from './PhaseTimeline'
 import FindingsTable from './FindingsTable'
 import AIChat from './AIChat'
+import ActivityFeed from './ActivityFeed'
 
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>()
@@ -57,7 +58,12 @@ export default function CampaignDetail() {
         </div>
       </div>
 
-      <PhaseTimeline phases={campaign.phases} />
+      <PhaseTimeline phases={campaign.phases} campaignId={campaign.id} />
+
+      <div className="mt-6 mb-6">
+        <h2 className="text-lg font-semibold mb-2">Live Activity</h2>
+        <ActivityFeed campaignId={campaign.id} />
+      </div>
 
       {findings && <FindingsTable findings={findings} />}
 

@@ -73,28 +73,56 @@ class ToolWrapper(ABC):
         **kwargs: Any,
     ) -> ToolResult:
         """Execute the tool and return structured results."""
+        from ice_9.core.events import event_bus, Event, EventType
+
         cmd = self.build_command(target, **kwargs)
         started = datetime.utcnow()
 
+        event_bus.emit(Event(
+            type=EventType.TOOL_START,
+            data={"tool": self.name, "target": target, "command": " ".join(cmd)},
+        ))
+
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
+
+            stdout_lines: list[str] = []
+            batch: list[str] = []
+
+            for line in proc.stdout:
+                stdout_lines.append(line)
+                batch.append(line.rstrip())
+                if len(batch) >= 5:
+                    event_bus.emit(Event(
+                        type=EventType.TOOL_OUTPUT,
+                        data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
+                    ))
+                    batch = []
+
+            if batch:
+                event_bus.emit(Event(
+                    type=EventType.TOOL_OUTPUT,
+                    data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
+                ))
+
+            stderr_output = proc.stderr.read()
+            proc.wait(timeout=timeout)
             completed = datetime.utcnow()
+
             result = ToolResult(
                 tool=self.name,
                 target=target,
                 command=cmd,
                 return_code=proc.returncode,
-                stdout=proc.stdout,
-                stderr=proc.stderr,
+                stdout="".join(stdout_lines),
+                stderr=stderr_output,
                 started_at=started,
                 completed_at=completed,
             )
         except subprocess.TimeoutExpired:
+            proc.kill()
             completed = datetime.utcnow()
             result = ToolResult(
                 tool=self.name,
@@ -122,6 +150,17 @@ class ToolWrapper(ABC):
         # Parse output if successful
         if result.success:
             result.parsed = self.parse_output(result)
+
+        event_bus.emit(Event(
+            type=EventType.TOOL_COMPLETE if result.success else EventType.TOOL_ERROR,
+            data={
+                "tool": self.name,
+                "target": target,
+                "success": result.success,
+                "duration": result.duration_seconds,
+                "return_code": result.return_code,
+            },
+        ))
 
         return result
 

@@ -6,29 +6,30 @@ data_dir: ~/.ice9
 providers:
   ollama:
     base_url: "http://localhost:11434"
-    models: ["llama3.1", "codestral"]
-  claude:
-    api_key: "${ANTHROPIC_API_KEY}"
-    model: "claude-sonnet-4-6-20250514"
+    model: "llama3.2:3b"
+    models: ["llama3.2:3b", "llama3:latest"]
+  # claude:
+  #   api_key: "${ANTHROPIC_API_KEY}"
+  #   model: "claude-sonnet-4-6-20250514"
   # openai:
   #   api_key: "${OPENAI_API_KEY}"
   #   model: "gpt-4o"
-  # groq:
-  #   api_key: "${GROQ_API_KEY}"
-  #   model: "llama-3.1-70b-versatile"
 
-# AI Agent role assignments
+# AI Agent role assignments — all using local Ollama
 agents:
   coordinator:
-    provider: claude
+    provider: ollama
+    model: "llama3.2:3b"
     system_prompt: "You are the red team lead. Plan engagements, assign tasks to team members, and synthesize results into actionable intelligence."
   recon_analyst:
     provider: ollama
-    model: llama3.1
+    model: "llama3.2:3b"
     system_prompt: "You analyze network scan results, OSINT data, and map attack surfaces. Identify high-value targets and potential entry points."
   exploit_researcher:
-    provider: claude
+    provider: ollama
+    model: "llama3.2:3b"
     system_prompt: "You research vulnerabilities, review CVEs, and suggest attack vectors. Validate findings and assess exploitability."
   report_writer:
-    provider: claude
+    provider: ollama
+    model: "llama3.2:3b"
     system_prompt: "You write penetration test reports. Draft findings with clear severity ratings, evidence references, and remediation guidance."

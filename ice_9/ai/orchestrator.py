@@ -93,8 +93,15 @@ class CampaignOrchestrator:
         register_defaults()
         run_result = AutoRunResult()
 
+        from ice_9.core.events import event_bus, Event, EventType
+
         # Generate initial plan
         print_info("Generating AI engagement plan...")
+        event_bus.emit(Event(
+            type=EventType.AUTO_PHASE_SELECT,
+            campaign_id=campaign.id,
+            data={"action": "generating_plan", "max_phases": max_phases},
+        ))
         run_result.ai_plan = generate_engagement_plan(self.team, campaign)
 
         self.audit.log(
@@ -114,6 +121,11 @@ class CampaignOrchestrator:
 
             phase_name = PHASE_NAMES.get(next_phase, next_phase.value)
             print_info(f"AI selected: {phase_name} ({next_phase.value})")
+            event_bus.emit(Event(
+                type=EventType.AUTO_PHASE_SELECT,
+                campaign_id=campaign.id,
+                data={"action": "phase_selected", "phase": phase_name, "tactic_id": next_phase.value, "iteration": i + 1},
+            ))
 
             # Get and run the phase module
             try:
@@ -159,6 +171,16 @@ class CampaignOrchestrator:
 
         if not run_result.stopped_reason:
             run_result.stopped_reason = f"Completed {max_phases} phase iterations"
+
+        event_bus.emit(Event(
+            type=EventType.AUTO_COMPLETE,
+            campaign_id=campaign.id,
+            data={
+                "phases_executed": run_result.phases_executed,
+                "total_findings": run_result.total_findings,
+                "reason": run_result.stopped_reason,
+            },
+        ))
 
         self.audit.log(
             "auto.complete",

@@ -9,3 +9,4 @@ build/
 *.jsonl
 .ice9/
 
+node_modules/
