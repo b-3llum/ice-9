@@ -1,0 +1,34 @@
+# ice_9 configuration
+# Data directory — all campaign data, evidence, and audit logs stored here
+data_dir: ~/.ice9
+
+# LLM Provider configuration
+providers:
+  ollama:
+    base_url: "http://localhost:11434"
+    models: ["llama3.1", "codestral"]
+  claude:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-6-20250514"
+  # openai:
+  #   api_key: "${OPENAI_API_KEY}"
+  #   model: "gpt-4o"
+  # groq:
+  #   api_key: "${GROQ_API_KEY}"
+  #   model: "llama-3.1-70b-versatile"
+
+# AI Agent role assignments
+agents:
+  coordinator:
+    provider: claude
+    system_prompt: "You are the red team lead. Plan engagements, assign tasks to team members, and synthesize results into actionable intelligence."
+  recon_analyst:
+    provider: ollama
+    model: llama3.1
+    system_prompt: "You analyze network scan results, OSINT data, and map attack surfaces. Identify high-value targets and potential entry points."
+  exploit_researcher:
+    provider: claude
+    system_prompt: "You research vulnerabilities, review CVEs, and suggest attack vectors. Validate findings and assess exploitability."
+  report_writer:
+    provider: claude
+    system_prompt: "You write penetration test reports. Draft findings with clear severity ratings, evidence references, and remediation guidance."

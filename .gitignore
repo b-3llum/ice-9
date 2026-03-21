@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+*.db
+dist/
+build/
+.eggs/
+*.jsonl
+.ice9/
+

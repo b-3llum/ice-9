@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ice-9"
+version = "0.1.0"
+description = "Red team orchestration platform — MITRE ATT&CK-aligned campaign management"
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=13.0",
+    "typer>=0.9",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-docx>=1.0",
+    "httpx>=0.25",
+    "anthropic>=0.40",
+    "openai>=1.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.20",
+]
+
+[project.scripts]
+ice9 = "ice_9.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ice_9"]
