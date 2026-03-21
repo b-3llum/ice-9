@@ -1,0 +1,41 @@
+[Unit]
+Description=ice_9 Red Team Orchestration API
+Documentation=https://github.com/redforge/ice_9
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ice9
+Group=ice9
+WorkingDirectory=/opt/ice9
+Environment=ICE9_HOME=/opt/ice9
+Environment=ICE9_API_KEY=changeme
+EnvironmentFile=-/opt/ice9/.env
+
+ExecStart=/opt/ice9/.venv/bin/uvicorn ice_9.api:app \
+    --host 127.0.0.1 \
+    --port 8443 \
+    --ssl-keyfile /opt/ice9/tls/key.pem \
+    --ssl-certfile /opt/ice9/tls/cert.pem \
+    --workers 2 \
+    --log-level info
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/ice9/data /opt/ice9/logs
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

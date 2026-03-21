@@ -14,9 +14,9 @@ class ReconPhase(PhaseModule):
 
     phase_type = PhaseType.RECON
     name = "Reconnaissance"
-    description = "Network discovery, port scanning, and service enumeration"
+    description = "Network discovery, port scanning, service enumeration, and OSINT gathering"
     required_tools = ["nmap"]
-    att_ck_techniques = ["T1595", "T1592", "T1590", "T1046"]
+    att_ck_techniques = ["T1595", "T1592", "T1590", "T1046", "T1589"]
 
     def plan(self, campaign: Campaign) -> list[dict[str, Any]]:
         """Plan recon tasks based on campaign scope."""
@@ -56,7 +56,30 @@ class ReconPhase(PhaseModule):
                 },
             })
 
+            # OSINT tools for domain targets (not IP ranges)
+            if self._is_domain(target):
+                tasks.append({
+                    "tool": "theharvester",
+                    "target": target,
+                    "params": {"source": "all", "limit": 500},
+                })
+                tasks.append({
+                    "tool": "amass",
+                    "target": target,
+                    "params": {"passive": True},
+                })
+                tasks.append({
+                    "tool": "subfinder",
+                    "target": target,
+                    "params": {},
+                })
+
         return tasks
+
+    @staticmethod
+    def _is_domain(target: str) -> bool:
+        """Check if a target looks like a domain (vs an IP/CIDR)."""
+        return any(c.isalpha() for c in target) and "." in target
 
     def analyze_results(
         self, campaign: Campaign, results: list[ToolResult]
@@ -72,6 +95,10 @@ class ReconPhase(PhaseModule):
                 findings.extend(self._analyze_nmap(result))
             elif result.tool == "nuclei":
                 findings.extend(self._analyze_nuclei(result))
+            elif result.tool == "theharvester":
+                findings.extend(self._analyze_theharvester(result))
+            elif result.tool in ("amass", "subfinder"):
+                findings.extend(self._analyze_subdomain_tool(result))
 
         return findings
 
@@ -141,6 +168,49 @@ class ReconPhase(PhaseModule):
                     description=f"Host {ip} has {len(open_ports)} open ports, suggesting insufficient hardening.",
                     remediation="Review and close unnecessary services. Apply principle of least privilege.",
                 ))
+
+        return findings
+
+    def _analyze_theharvester(self, result: ToolResult) -> list[Finding]:
+        """Analyze theHarvester OSINT results."""
+        findings = []
+        emails = result.parsed.get("emails", [])
+        subdomains = result.parsed.get("subdomains", [])
+        ips = result.parsed.get("ips", [])
+
+        if emails:
+            findings.append(self._create_finding(
+                title=f"OSINT: {len(emails)} email addresses discovered for {result.target}",
+                severity=Severity.LOW,
+                description=f"Email addresses found: {', '.join(emails[:20])}{'...' if len(emails) > 20 else ''}",
+                remediation="Review exposed email addresses. Consider employee awareness training.",
+                att_ck_ids=["T1589.002"],
+            ))
+
+        if subdomains:
+            findings.append(self._create_finding(
+                title=f"OSINT: {len(subdomains)} subdomains discovered for {result.target}",
+                severity=Severity.INFO,
+                description=f"Subdomains: {', '.join(subdomains[:20])}{'...' if len(subdomains) > 20 else ''}",
+                remediation="Review exposed subdomains for unnecessary or sensitive services.",
+                att_ck_ids=["T1590.002"],
+            ))
+
+        return findings
+
+    def _analyze_subdomain_tool(self, result: ToolResult) -> list[Finding]:
+        """Analyze amass/subfinder subdomain results."""
+        findings = []
+        subdomains = result.parsed.get("subdomains", [])
+        count = len(subdomains)
+
+        if count > 0:
+            findings.append(self._create_finding(
+                title=f"OSINT ({result.tool}): {count} subdomains for {result.target}",
+                severity=Severity.INFO,
+                description=f"Subdomains via {result.tool}: {', '.join(subdomains[:20])}{'...' if count > 20 else ''}",
+                att_ck_ids=["T1590.002"],
+            ))
 
         return findings
 

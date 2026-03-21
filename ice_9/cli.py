@@ -194,6 +194,56 @@ def campaign_delete(
     store.close()
 
 
+@campaign_app.command("auto")
+def campaign_auto(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+    max_phases: int = typer.Option(5, "--max", "-m", help="Max phases to auto-execute"),
+) -> None:
+    """AI autopilot — automatically select and execute engagement phases."""
+    from ice_9.ai.orchestrator import CampaignOrchestrator
+    from ice_9.tools.custom import register_defaults
+
+    register_defaults()
+
+    store = _get_store()
+    audit = _get_audit()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        return
+
+    if not campaign.rules_of_engagement.scope:
+        print_error("Campaign has no scope defined.")
+        store.close()
+        return
+
+    orchestrator = _build_team()
+    auto = CampaignOrchestrator(orchestrator, store, audit)
+
+    console.print(f"\n[bold red]{'='*60}[/bold red]")
+    console.print("[bold]AI AUTOPILOT MODE[/bold]")
+    console.print(f"Campaign: {campaign.name} ({campaign.id[:8]})")
+    console.print(f"Max phases: {max_phases}")
+    console.print(f"[bold red]{'='*60}[/bold red]\n")
+
+    result = auto.auto_run(campaign, max_phases=max_phases)
+
+    console.print(f"\n[bold red]{'='*60}[/bold red]")
+    console.print("[bold]AUTOPILOT COMPLETE[/bold]")
+    console.print(f"[bold red]{'='*60}[/bold red]\n")
+    console.print(f"Phases executed: {', '.join(result.phases_executed) or 'none'}")
+    console.print(f"Phases skipped: {', '.join(result.phases_skipped) or 'none'}")
+    console.print(f"Total findings: {result.total_findings}")
+    console.print(f"Stopped: {result.stopped_reason}")
+
+    if result.ai_synthesis:
+        console.print(f"\n[bold]AI TEAM SYNTHESIS[/bold]\n")
+        console.print(result.ai_synthesis[:3000])
+
+    orchestrator.close()
+    store.close()
+
+
 def _transition_campaign(
     campaign_id: str, target: CampaignStatus, action: str
 ) -> None:
@@ -222,10 +272,7 @@ def phase_run(
     phase: str = typer.Argument(help="Phase type (e.g. TA0043 or 'recon')"),
 ) -> None:
     """Run an automated phase module against campaign targets."""
-    from ice_9.phases.recon import ReconPhase
-    from ice_9.phases.discovery import DiscoveryPhase
-    from ice_9.phases.credential_access import CredentialAccessPhase
-    from ice_9.phases.lateral_movement import LateralMovementPhase
+    from ice_9.phases import get_phase_modules
     from ice_9.tools.custom import register_defaults
 
     register_defaults()
@@ -242,13 +289,8 @@ def phase_run(
         store.close()
         return
 
-    # Phase module registry
-    phase_modules = {
-        PhaseType.RECON: ReconPhase,
-        PhaseType.DISCOVERY: DiscoveryPhase,
-        PhaseType.CREDENTIAL_ACCESS: CredentialAccessPhase,
-        PhaseType.LATERAL_MOVEMENT: LateralMovementPhase,
-    }
+    # Phase module registry — all 13 ATT&CK phases
+    phase_modules = get_phase_modules()
 
     module_class = phase_modules.get(phase_type)
     if not module_class:

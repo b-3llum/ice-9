@@ -112,6 +112,10 @@ def register_defaults() -> None:
     from ice_9.tools.impacket_tools import (
         SecretsDump, GetNPUsers, GetUserSPNs, PsExec, WmiExec, NTLMRelayx,
     )
+    from ice_9.tools.theharvester import TheHarvesterWrapper
+    from ice_9.tools.amass import AmassWrapper
+    from ice_9.tools.subfinder import SubfinderWrapper
+    from ice_9.tools.responder import ResponderWrapper
 
     register_tool(NmapWrapper())
     register_tool(NucleiWrapper())
@@ -125,4 +129,7 @@ def register_defaults() -> None:
     register_tool(PsExec())
     register_tool(WmiExec())
     register_tool(NTLMRelayx())
-    register_tool(KerbMapWrapper())
+    register_tool(TheHarvesterWrapper())
+    register_tool(AmassWrapper())
+    register_tool(SubfinderWrapper())
+    register_tool(ResponderWrapper())

@@ -85,10 +85,10 @@ CREATE TABLE IF NOT EXISTS findings (
 class Store:
     """SQLite-backed persistence for campaign data."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, check_same_thread: bool = True) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(db_path))
+        self.conn = sqlite3.connect(str(db_path), check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute("PRAGMA journal_mode = WAL")

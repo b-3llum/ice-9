@@ -51,6 +51,54 @@ class PhaseModule(ABC):
         """Analyze tool results and generate findings."""
         ...
 
+    def ai_plan(
+        self,
+        campaign: Campaign,
+        orchestrator: Any = None,
+    ) -> list[dict[str, Any]]:
+        """AI-enhanced task planning.
+
+        Uses the ReconAnalyst agent to suggest additional tasks beyond the
+        deterministic plan. Falls back to plan() if no AI is available.
+        """
+        base_tasks = self.plan(campaign)
+
+        if orchestrator is None:
+            return base_tasks
+
+        try:
+            from ice_9.ai.agents import AgentRole
+            import json as _json
+            import re as _re
+
+            context = orchestrator.get_campaign_context(campaign)
+            tool_names = ", ".join(self.required_tools) if self.required_tools else "none"
+
+            prompt = (
+                f"I'm planning tasks for the {self.name} phase ({self.phase_type.value}).\n"
+                f"Available tools: {tool_names}\n"
+                f"Current plan has {len(base_tasks)} tasks.\n"
+                f"Techniques covered: {', '.join(self.att_ck_techniques)}\n\n"
+                "Suggest any additional tasks or parameter adjustments. "
+                "Respond with a JSON array of task objects: "
+                '[{"tool": "name", "target": "target", "params": {...}}]'
+            )
+
+            result = orchestrator.ask_agent(
+                AgentRole.RECON_ANALYST, prompt, context=context
+            )
+
+            if result.success and result.content:
+                match = _re.search(r"\[.*\]", result.content, _re.DOTALL)
+                if match:
+                    ai_tasks = _json.loads(match.group(0))
+                    if isinstance(ai_tasks, list):
+                        base_tasks.extend(ai_tasks)
+        except Exception:
+            pass  # Silently fall back to deterministic plan
+
+        return base_tasks
+
     def check_prerequisites(self) -> list[str]:
         """Check if required tools are available. Returns list of missing tools."""
         missing = []
