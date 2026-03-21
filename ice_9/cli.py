@@ -347,6 +347,9 @@ def audit_show(
 findings_app = typer.Typer(help="Findings management", no_args_is_help=True)
 app.add_typer(findings_app, name="findings")
 
+tool_app = typer.Typer(help="Tool management and execution", no_args_is_help=True)
+app.add_typer(tool_app, name="tool")
+
 
 @findings_app.command("list")
 def findings_list(
@@ -357,6 +360,197 @@ def findings_list(
     findings = store.get_all_findings(campaign_id)
     store.close()
     print_findings_table(findings)
+
+
+# --- Tool commands ---
+
+
+@tool_app.command("list")
+def tool_list() -> None:
+    """List all registered tools and their availability."""
+    from rich.table import Table
+    from ice_9.tools.custom import register_defaults, list_tools
+
+    register_defaults()
+    tools = list_tools()
+
+    table = Table(title="Registered Tools", border_style="red")
+    table.add_column("Name", style="cyan")
+    table.add_column("Binary")
+    table.add_column("Available")
+    table.add_column("ATT&CK IDs")
+    table.add_column("Description", max_width=50)
+
+    for t in tools:
+        available = "[green]yes[/green]" if t.is_available() else "[red]no[/red]"
+        table.add_row(
+            t.name,
+            t.binary,
+            available,
+            ", ".join(t.att_ck_ids[:3]) if t.att_ck_ids else "[dim]-[/dim]",
+            t.description[:50],
+        )
+
+    console.print(table)
+
+
+@tool_app.command("run")
+def tool_run(
+    tool_name: str = typer.Argument(help="Tool name (e.g. nmap, nuclei, kerb-map)"),
+    target: str = typer.Option(..., "--target", "-t", help="Target (IP/CIDR/domain)"),
+    campaign_id: Optional[str] = typer.Option(
+        None, "--campaign", "-c", help="Associate with campaign"
+    ),
+    profile: str = typer.Option("standard", "--profile", "-p", help="Scan profile"),
+    timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds"),
+    args: Optional[list[str]] = typer.Option(None, "--arg", "-a", help="Extra arguments"),
+) -> None:
+    """Execute a tool against a target."""
+    from datetime import datetime
+    from ice_9.tools.custom import register_defaults, get_tool
+    from ice_9.core.models import Task, TaskStatus
+
+    register_defaults()
+    tool = get_tool(tool_name)
+    if not tool:
+        print_error(f"Unknown tool: {tool_name}. Run 'ice9 tool list' to see available tools.")
+        return
+
+    if not tool.is_available():
+        print_error(f"Tool '{tool_name}' is not installed. Binary '{tool.binary}' not found.")
+        return
+
+    # Resolve campaign if specified
+    store = None
+    campaign = None
+    phase_id = None
+    if campaign_id:
+        store = _get_store()
+        campaign = _resolve_campaign(store, campaign_id)
+        if not campaign:
+            store.close()
+            return
+
+    print_info(f"Running [bold]{tool_name}[/bold] against [cyan]{target}[/cyan]...")
+
+    # Execute
+    result = tool.run(target, timeout=timeout, profile=profile, args=args or [])
+
+    if result.success:
+        print_success(
+            f"Completed in {result.duration_seconds:.1f}s "
+            f"(exit code {result.return_code})"
+        )
+        # Show parsed summary
+        if result.parsed:
+            _print_tool_summary(tool_name, result.parsed)
+    else:
+        print_error(f"Failed (exit code {result.return_code})")
+        if result.stderr:
+            console.print(f"[dim]{result.stderr[:500]}[/dim]")
+
+    # Save task to campaign if associated
+    if campaign and store:
+        audit = _get_audit()
+        task = Task(
+            tool=tool_name,
+            target=target,
+            params={"profile": profile, "args": args or []},
+            status=TaskStatus.COMPLETED if result.success else TaskStatus.FAILED,
+            output=result.stdout[:10000],  # Cap stored output
+            att_ck_id=tool.att_ck_ids[0] if tool.att_ck_ids else None,
+            started_at=result.started_at,
+            completed_at=result.completed_at,
+            campaign_id=campaign.id,
+        )
+        store.save_task(task)
+        audit.log(
+            "tool.run",
+            campaign_id=campaign.id,
+            task_id=task.id,
+            details={
+                "tool": tool_name,
+                "target": target,
+                "success": result.success,
+                "duration": result.duration_seconds,
+            },
+        )
+        print_info(f"Task saved to campaign [cyan]{campaign.id[:8]}[/cyan]")
+        store.close()
+
+
+@tool_app.command("add")
+def tool_add_custom(
+    name: str = typer.Option(..., "--name", "-n", help="Tool name"),
+    binary: str = typer.Option(..., "--binary", "-b", help="Binary/command"),
+    description: str = typer.Option("", "--desc", "-d", help="Description"),
+    att_ck: Optional[list[str]] = typer.Option(None, "--attck", help="ATT&CK technique IDs"),
+) -> None:
+    """Register a custom tool."""
+    from ice_9.tools.custom import CustomToolWrapper, register_tool, register_defaults
+
+    register_defaults()
+    tool = CustomToolWrapper(
+        name=name,
+        binary=binary,
+        description=description,
+        att_ck_ids=att_ck or [],
+    )
+    register_tool(tool)
+    available = tool.is_available()
+    if available:
+        print_success(f"Tool '{name}' registered (binary: {binary})")
+    else:
+        print_warning(f"Tool '{name}' registered but binary '{binary}' not found in PATH")
+
+
+def _print_tool_summary(tool_name: str, parsed: dict) -> None:
+    """Print a summary of parsed tool output."""
+    from rich.table import Table
+
+    if tool_name == "nmap":
+        hosts = parsed.get("hosts", [])
+        summary = parsed.get("summary", {})
+        console.print(
+            f"  Hosts: {summary.get('hosts_up', len(hosts))} up, "
+            f"{summary.get('hosts_down', 0)} down | "
+            f"Open ports: {parsed.get('total_open_ports', 0)}"
+        )
+        for host in hosts[:10]:  # Show first 10 hosts
+            ip = host.get("ip", "?")
+            open_ports = [p for p in host.get("ports", []) if p.get("state") == "open"]
+            if open_ports:
+                port_str = ", ".join(
+                    f"{p['port']}/{p.get('service', '?')}" for p in open_ports[:8]
+                )
+                if len(open_ports) > 8:
+                    port_str += f" (+{len(open_ports) - 8})"
+                console.print(f"  [cyan]{ip}[/cyan]: {port_str}")
+
+    elif tool_name == "nuclei":
+        counts = parsed.get("severity_counts", {})
+        total = parsed.get("total", 0)
+        parts = []
+        for sev in ["critical", "high", "medium", "low", "info"]:
+            if sev in counts:
+                color = {"critical": "bright_red", "high": "red", "medium": "yellow", "low": "blue", "info": "dim"}[sev]
+                parts.append(f"[{color}]{sev}: {counts[sev]}[/{color}]")
+        console.print(f"  Findings: {total} — {', '.join(parts)}")
+
+    elif tool_name == "kerb-map":
+        for key in ["spn_accounts", "asrep_accounts", "delegation_issues", "cve_findings"]:
+            items = parsed.get(key, [])
+            if items:
+                label = key.replace("_", " ").title()
+                console.print(f"  {label}: {len(items)}")
+    else:
+        # Generic — show line count or data keys
+        if "lines" in parsed:
+            console.print(f"  Output: {parsed.get('line_count', 0)} lines")
+        elif "data" in parsed:
+            data = parsed["data"]
+            if isinstance(data, list):
+                console.print(f"  Results: {len(data)} entries")
 
 
 # --- Helpers ---
