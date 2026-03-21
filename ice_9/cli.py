@@ -216,6 +216,67 @@ def _transition_campaign(
 # --- Phase commands ---
 
 
+@phase_app.command("run")
+def phase_run(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+    phase: str = typer.Argument(help="Phase type (e.g. TA0043 or 'recon')"),
+) -> None:
+    """Run an automated phase module against campaign targets."""
+    from ice_9.phases.recon import ReconPhase
+    from ice_9.phases.discovery import DiscoveryPhase
+    from ice_9.phases.credential_access import CredentialAccessPhase
+    from ice_9.phases.lateral_movement import LateralMovementPhase
+    from ice_9.tools.custom import register_defaults
+
+    register_defaults()
+
+    store = _get_store()
+    audit = _get_audit()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        return
+
+    phase_type = _resolve_phase_type(phase)
+    if not phase_type:
+        store.close()
+        return
+
+    # Phase module registry
+    phase_modules = {
+        PhaseType.RECON: ReconPhase,
+        PhaseType.DISCOVERY: DiscoveryPhase,
+        PhaseType.CREDENTIAL_ACCESS: CredentialAccessPhase,
+        PhaseType.LATERAL_MOVEMENT: LateralMovementPhase,
+    }
+
+    module_class = phase_modules.get(phase_type)
+    if not module_class:
+        print_error(
+            f"No automated module for phase '{phase}'. "
+            f"Available: {', '.join(PHASE_NAMES[pt] for pt in phase_modules)}"
+        )
+        store.close()
+        return
+
+    module = module_class(store=store, audit=audit)
+
+    # Check scope
+    if not campaign.rules_of_engagement.scope:
+        print_error("Campaign has no scope defined. Add targets with 'campaign create --scope'.")
+        store.close()
+        return
+
+    console.print(f"\n[bold red]{'='*60}[/bold red]")
+    console.print(f"[bold]Phase: {module.name}[/bold] ({phase_type.value})")
+    console.print(f"Campaign: {campaign.name} ({campaign.id[:8]})")
+    console.print(f"Scope: {', '.join(campaign.rules_of_engagement.scope)}")
+    console.print(f"[bold red]{'='*60}[/bold red]\n")
+
+    module.run(campaign)
+    store.close()
+
+
 @phase_app.command("list")
 def phase_list(
     campaign_id: str = typer.Argument(help="Campaign ID"),
