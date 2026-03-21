@@ -411,6 +411,9 @@ app.add_typer(findings_app, name="findings")
 tool_app = typer.Typer(help="Tool management and execution", no_args_is_help=True)
 app.add_typer(tool_app, name="tool")
 
+team_app = typer.Typer(help="AI agent team management", no_args_is_help=True)
+app.add_typer(team_app, name="team")
+
 
 @findings_app.command("list")
 def findings_list(
@@ -421,6 +424,226 @@ def findings_list(
     findings = store.get_all_findings(campaign_id)
     store.close()
     print_findings_table(findings)
+
+
+# --- Team commands ---
+
+
+def _build_team():
+    """Build the team orchestrator from config."""
+    from ice_9.ai.providers import ProviderRegistry
+    from ice_9.ai.agents import AgentRegistry
+    from ice_9.ai.team import TeamOrchestrator
+
+    settings = load_settings()
+    providers_conf = {
+        name: vars(pc) if hasattr(pc, '__dict__') else pc.__dict__
+        for name, pc in settings.providers.items()
+    } if settings.providers else {}
+    agents_conf = {
+        name: vars(ac) if hasattr(ac, '__dict__') else ac.__dict__
+        for name, ac in settings.agents.items()
+    } if settings.agents else {}
+
+    # Handle Pydantic models
+    prov_dict = {}
+    for name, pc in settings.providers.items():
+        prov_dict[name] = {
+            "base_url": pc.base_url,
+            "api_key": pc.api_key,
+            "model": pc.model,
+            "models": pc.models,
+        }
+
+    agent_dict = {}
+    for name, ac in settings.agents.items():
+        agent_dict[name] = {
+            "provider": ac.provider,
+            "model": ac.model,
+            "system_prompt": ac.system_prompt,
+        }
+
+    provider_reg = ProviderRegistry.from_config(prov_dict)
+    agent_reg = AgentRegistry.from_config(agent_dict)
+    audit = _get_audit()
+
+    return TeamOrchestrator(provider_reg, agent_reg, audit)
+
+
+@team_app.command("status")
+def team_status() -> None:
+    """Show registered agents and their provider assignments."""
+    from rich.table import Table
+    from ice_9.ai.agents import AgentRegistry
+
+    settings = load_settings()
+    agent_dict = {}
+    for name, ac in settings.agents.items():
+        agent_dict[name] = {
+            "provider": ac.provider,
+            "model": ac.model,
+            "system_prompt": ac.system_prompt,
+        }
+    agent_reg = AgentRegistry.from_config(agent_dict)
+
+    table = Table(title="AI Agent Team", border_style="red")
+    table.add_column("Role", style="cyan")
+    table.add_column("Provider", style="bold")
+    table.add_column("Model")
+    table.add_column("Enabled")
+
+    for agent in agent_reg.list_agents():
+        table.add_row(
+            agent.display_name,
+            agent.provider_name,
+            agent.model or "[dim]default[/dim]",
+            "[green]yes[/green]" if agent.enabled else "[red]no[/red]",
+        )
+
+    console.print(table)
+
+
+@team_app.command("ask")
+def team_ask(
+    prompt: str = typer.Argument(help="Question or task for the agent"),
+    agent: str = typer.Option("coordinator", "--agent", "-a", help="Agent role"),
+    campaign_id: Optional[str] = typer.Option(None, "--campaign", "-c", help="Campaign for context"),
+) -> None:
+    """Ask a specific agent a question."""
+    orchestrator = _build_team()
+
+    context = ""
+    if campaign_id:
+        store = _get_store()
+        campaign = _resolve_campaign(store, campaign_id)
+        if campaign:
+            context = orchestrator.get_campaign_context(campaign)
+        store.close()
+
+    print_info(f"Asking [bold]{agent}[/bold]...")
+    result = orchestrator.ask_agent(agent, prompt, context=context)
+
+    if result.success:
+        console.print(f"\n[bold cyan]{result.agent_role.upper()}[/bold cyan] ({result.provider}/{result.model}):\n")
+        console.print(result.content)
+        if result.usage:
+            console.print(f"\n[dim]Tokens: {result.usage}[/dim]")
+    else:
+        print_error(f"Agent failed: {result.error}")
+
+    orchestrator.close()
+
+
+@team_app.command("run")
+def team_run(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+    prompt: str = typer.Option(
+        "Analyze all findings and suggest next steps",
+        "--prompt", "-p",
+        help="Task for the team",
+    ),
+) -> None:
+    """Run the full AI team analysis on campaign data."""
+    orchestrator = _build_team()
+    store = _get_store()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        orchestrator.close()
+        return
+
+    context = orchestrator.get_campaign_context(campaign)
+
+    console.print(f"\n[bold red]{'='*60}[/bold red]")
+    console.print("[bold]Deploying AI Team[/bold]")
+    console.print(f"Campaign: {campaign.name} ({campaign.id[:8]})")
+    console.print(f"[bold red]{'='*60}[/bold red]\n")
+
+    print_info("Dispatching agents in parallel...")
+    team_result = orchestrator.run_team(prompt=prompt, context=context)
+
+    # Show individual results
+    for result in team_result.results:
+        if result.success:
+            console.print(
+                f"\n[bold cyan]{result.agent_role.upper()}[/bold cyan] "
+                f"({result.provider}/{result.model}) — {result.duration_seconds:.1f}s"
+            )
+            console.print(result.content[:2000])
+            if len(result.content) > 2000:
+                console.print(f"[dim]... ({len(result.content)} chars total)[/dim]")
+        else:
+            print_error(f"{result.agent_role}: {result.error}")
+
+    # Show synthesis
+    if team_result.synthesis:
+        console.print(f"\n[bold red]{'='*60}[/bold red]")
+        console.print("[bold]COORDINATOR SYNTHESIS[/bold]")
+        console.print(f"[bold red]{'='*60}[/bold red]\n")
+        console.print(team_result.synthesis)
+
+    store.close()
+    orchestrator.close()
+
+
+@team_app.command("plan")
+def team_plan(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+) -> None:
+    """Generate an AI-powered engagement plan."""
+    from ice_9.ai.planner import generate_engagement_plan
+
+    orchestrator = _build_team()
+    store = _get_store()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        orchestrator.close()
+        return
+
+    print_info("Generating engagement plan...")
+    plan = generate_engagement_plan(orchestrator, campaign)
+
+    console.print(f"\n[bold]Engagement Plan — {campaign.name}[/bold]\n")
+    console.print(plan)
+
+    store.close()
+    orchestrator.close()
+
+
+@team_app.command("analyze")
+def team_analyze(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+) -> None:
+    """AI team analyzes all findings and suggests next steps."""
+    from ice_9.ai.analyzer import analyze_findings
+
+    orchestrator = _build_team()
+    store = _get_store()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        orchestrator.close()
+        return
+
+    print_info("Team analyzing findings...")
+    team_result = analyze_findings(orchestrator, campaign, store)
+
+    for result in team_result.results:
+        if result.success:
+            console.print(
+                f"\n[bold cyan]{result.agent_role.upper()}[/bold cyan]:"
+            )
+            console.print(result.content[:3000])
+
+    if team_result.synthesis:
+        console.print(f"\n[bold red]{'='*60}[/bold red]")
+        console.print("[bold]TEAM ASSESSMENT[/bold]")
+        console.print(f"[bold red]{'='*60}[/bold red]\n")
+        console.print(team_result.synthesis)
+
+    store.close()
+    orchestrator.close()
 
 
 # --- Tool commands ---
