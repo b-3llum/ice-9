@@ -106,7 +106,23 @@ def register_defaults() -> None:
     from ice_9.tools.nmap import NmapWrapper
     from ice_9.tools.nuclei import NucleiWrapper
     from ice_9.tools.kerb_map import KerbMapWrapper
+    from ice_9.tools.bloodhound import BloodHoundWrapper
+    from ice_9.tools.metasploit import MetasploitWrapper
+    from ice_9.tools.crackmapexec import CrackMapExecWrapper
+    from ice_9.tools.impacket_tools import (
+        SecretsDump, GetNPUsers, GetUserSPNs, PsExec, WmiExec, NTLMRelayx,
+    )
 
     register_tool(NmapWrapper())
     register_tool(NucleiWrapper())
+    register_tool(KerbMapWrapper())
+    register_tool(BloodHoundWrapper())
+    register_tool(MetasploitWrapper())
+    register_tool(CrackMapExecWrapper())
+    register_tool(SecretsDump())
+    register_tool(GetNPUsers())
+    register_tool(GetUserSPNs())
+    register_tool(PsExec())
+    register_tool(WmiExec())
+    register_tool(NTLMRelayx())
     register_tool(KerbMapWrapper())

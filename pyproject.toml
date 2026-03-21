@@ -18,6 +18,8 @@ dependencies = [
     "openai>=1.0",
     "pyyaml>=6.0",
     "aiosqlite>=0.20",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
 ]
 
 [project.scripts]
