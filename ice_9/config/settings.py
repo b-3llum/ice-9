@@ -39,12 +39,20 @@ class Settings(BaseModel):
     agents: dict[str, AgentConfig] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
+        # Expand ~ in paths (YAML doesn't expand tilde)
+        self.data_dir = self.data_dir.expanduser().resolve()
         if self.db_path is None:
             self.db_path = self.data_dir / "ice9.db"
+        else:
+            self.db_path = self.db_path.expanduser().resolve()
         if self.evidence_dir is None:
             self.evidence_dir = self.data_dir / "evidence"
+        else:
+            self.evidence_dir = self.evidence_dir.expanduser().resolve()
         if self.audit_dir is None:
             self.audit_dir = self.data_dir / "audit"
+        else:
+            self.audit_dir = self.audit_dir.expanduser().resolve()
 
 
 def load_settings(config_path: Optional[Path] = None) -> Settings:
