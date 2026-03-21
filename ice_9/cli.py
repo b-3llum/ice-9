@@ -414,6 +414,9 @@ app.add_typer(tool_app, name="tool")
 team_app = typer.Typer(help="AI agent team management", no_args_is_help=True)
 app.add_typer(team_app, name="team")
 
+report_app = typer.Typer(help="Report generation", no_args_is_help=True)
+app.add_typer(report_app, name="report")
+
 
 @findings_app.command("list")
 def findings_list(
@@ -644,6 +647,71 @@ def team_analyze(
 
     store.close()
     orchestrator.close()
+
+
+# --- Report commands ---
+
+
+@report_app.command("generate")
+def report_generate(
+    campaign_id: str = typer.Argument(help="Campaign ID"),
+    output: str = typer.Option("", "--output", "-o", help="Output file path"),
+    ai_summary: bool = typer.Option(False, "--ai-summary", help="Generate AI executive summary"),
+    ai_narrative: bool = typer.Option(False, "--ai-narrative", help="Generate AI attack narrative"),
+) -> None:
+    """Generate a DOCX penetration test report."""
+    from ice_9.reporting.generator import ReportGenerator
+
+    store = _get_store()
+    audit = _get_audit()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        return
+
+    # Determine output path
+    if output:
+        output_path = Path(output)
+    else:
+        safe_name = campaign.name.replace(" ", "_").lower()
+        output_path = Path.cwd() / f"ice9_report_{safe_name}_{campaign.id[:8]}.docx"
+
+    exec_summary = ""
+    narrative = ""
+
+    # AI-generated content
+    if ai_summary or ai_narrative:
+        orchestrator = _build_team()
+        if ai_summary:
+            from ice_9.reporting.executive import generate_executive_summary
+            print_info("Generating AI executive summary...")
+            exec_summary = generate_executive_summary(orchestrator, campaign, store)
+        if ai_narrative:
+            from ice_9.reporting.narrative import generate_attack_narrative
+            print_info("Generating AI attack narrative...")
+            narrative = generate_attack_narrative(orchestrator, campaign, store)
+        orchestrator.close()
+
+    # Generate report
+    print_info("Generating DOCX report...")
+    generator = ReportGenerator(store)
+    result_path = generator.generate(
+        campaign=campaign,
+        output_path=output_path,
+        executive_summary=exec_summary,
+        attack_narrative=narrative,
+    )
+
+    findings = store.get_all_findings(campaign.id)
+    audit.log(
+        "report.generate",
+        campaign_id=campaign.id,
+        details={"output": str(result_path), "findings": len(findings)},
+    )
+
+    print_success(f"Report generated: [cyan]{result_path}[/cyan]")
+    print_info(f"Findings included: {len(findings)}")
+    store.close()
 
 
 # --- Tool commands ---
