@@ -1,12 +1,46 @@
-# ice_9 API Deployment
+# ice_9 Deployment
 
-## Prerequisites
+## Quick Setup (Development)
 
-- Python 3.11+
-- systemd (Linux)
-- TLS certificate and key
+From the repo root:
 
-## Setup
+```bash
+./install.sh
+```
+
+This will:
+1. Create a Python virtual environment and install ice_9
+2. Install dashboard npm dependencies
+3. Auto-detect your Python, Node.js, and tool paths
+4. Generate systemd service files tailored to your environment
+5. Optionally install and enable the services
+
+After installation:
+
+```bash
+ice9-services status     # check services
+ice9-services restart    # restart API + dashboard
+ice9-services logs       # tail all logs
+ice9-services logs ice9-api  # tail API logs only
+```
+
+## Manual Service Management
+
+If you skipped the systemd step during install, you can install later:
+
+```bash
+./ice9-services install   # copy generated .service files to systemd
+./ice9-services enable    # enable auto-start on boot
+./ice9-services start     # start now
+```
+
+To remove:
+
+```bash
+./ice9-services uninstall
+```
+
+## Production Deployment
 
 ### 1. Create service user
 
@@ -22,13 +56,11 @@ sudo chown -R ice9:ice9 /opt/ice9
 sudo -u ice9 bash -c '
   cd /opt/ice9
   python3 -m venv .venv
-  .venv/bin/pip install -e /path/to/redforge
+  .venv/bin/pip install -e /path/to/ice-9
 '
 ```
 
 ### 3. TLS certificates
-
-Generate a self-signed cert for testing, or use your own:
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -nodes \
@@ -52,24 +84,15 @@ sudo chown ice9:ice9 /opt/ice9/.env
 sudo chmod 600 /opt/ice9/.env
 ```
 
-### 5. Install and start service
+### 5. Run install.sh as the ice9 user
 
 ```bash
-sudo cp deploy/ice9-api.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now ice9-api
+sudo -u ice9 /path/to/ice-9/install.sh
 ```
 
-### 6. Verify
+### 6. Using Gunicorn (alternative)
 
-```bash
-sudo systemctl status ice9-api
-curl -k https://127.0.0.1:8443/health
-```
-
-## Using Gunicorn (alternative)
-
-Instead of the systemd unit's direct uvicorn invocation, you can use gunicorn with the provided config:
+For production, use gunicorn with the provided config instead of direct uvicorn:
 
 ```bash
 .venv/bin/gunicorn ice_9.api:app -c /path/to/deploy/gunicorn.conf.py
@@ -77,18 +100,25 @@ Instead of the systemd unit's direct uvicorn invocation, you can use gunicorn wi
 
 Override settings via environment variables: `ICE9_BIND`, `ICE9_WORKERS`, `ICE9_TLS_KEY`, `ICE9_TLS_CERT`, `ICE9_LOG_LEVEL`.
 
-## Firewall
-
-Restrict API access to trusted networks:
+### 7. Firewall
 
 ```bash
 sudo ufw allow from 10.0.0.0/8 to any port 8443 proto tcp
 sudo ufw deny 8443
 ```
 
+## Generated Files
+
+`install.sh` generates service files in this directory:
+- `ice9-api.service` — API server (uvicorn on port 8443)
+- `ice9-dashboard.service` — Dashboard (Vite on port 3000)
+
+These are `.gitignore`d because they contain machine-specific paths.
+
 ## Logs
 
 ```bash
 journalctl -u ice9-api -f          # systemd journal
-tail -f /opt/ice9/logs/access.log  # gunicorn access log
+journalctl -u ice9-dashboard -f    # dashboard logs
+tail -f /opt/ice9/logs/access.log  # gunicorn access log (production)
 ```

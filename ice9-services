@@ -1,0 +1,157 @@
+#!/bin/bash
+# ============================================================
+#  ice9-services — manage ice_9 API and Dashboard services
+# ============================================================
+#  Usage:  ice9-services {start|stop|restart|status|logs|install|uninstall}
+# ============================================================
+
+set -euo pipefail
+
+SERVICES=(ice9-api ice9-dashboard)
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEPLOY_DIR="${REPO_DIR}/deploy"
+
+RED='\033[0;31m'
+GRN='\033[0;32m'
+YLW='\033[1;33m'
+CYN='\033[0;36m'
+RST='\033[0m'
+
+header() { echo -e "\n${CYN}━━━ $1 ━━━${RST}"; }
+
+# ── status with color ─────────────────────────────────────────
+do_status() {
+    header "ice_9 Service Status"
+    printf "  ${YLW}%-22s %-12s %-10s %s${RST}\n" "SERVICE" "ACTIVE" "ENABLED" "PID"
+    echo "  ──────────────────────────────────────────────────────"
+    for svc in "${SERVICES[@]}"; do
+        local active enabled pid
+        active=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
+        enabled=$(systemctl is-enabled "$svc" 2>/dev/null || echo "disabled")
+        pid=$(systemctl show -p MainPID --value "$svc" 2>/dev/null || echo "-")
+        [[ "$pid" == "0" ]] && pid="-"
+
+        local color="$RED"
+        [[ "$active" == "active" ]] && color="$GRN"
+        [[ "$active" == "activating" ]] && color="$YLW"
+
+        printf "  %-22s ${color}%-12s${RST} %-10s %s\n" "$svc" "$active" "$enabled" "$pid"
+    done
+
+    # Show URLs if running
+    echo ""
+    if systemctl is-active ice9-api &>/dev/null; then
+        local port
+        port=$(systemctl show ice9-api -p ExecStart --value 2>/dev/null | grep -oP 'port \K\d+' || echo "8443")
+        echo -e "  ${GRN}API:${RST}        http://localhost:${port}"
+    fi
+    if systemctl is-active ice9-dashboard &>/dev/null; then
+        echo -e "  ${GRN}Dashboard:${RST}  http://localhost:3000"
+    fi
+}
+
+# ── generic action on services ────────────────────────────────
+do_action() {
+    local action="$1"
+    header "${action^} ice_9 services"
+    for svc in "${SERVICES[@]}"; do
+        printf "  %-22s " "$svc"
+        if sudo systemctl "$action" "$svc" 2>/dev/null; then
+            echo -e "${GRN}✓${RST}"
+        else
+            echo -e "${RED}✗${RST}"
+        fi
+    done
+}
+
+# ── logs ──────────────────────────────────────────────────────
+do_logs() {
+    local svc="${2:-}"
+    if [[ -n "$svc" ]]; then
+        header "Logs: $svc"
+        journalctl -u "$svc" -f --no-hostname -o short-iso
+    else
+        header "Logs: all ice_9 services"
+        journalctl -u ice9-api -u ice9-dashboard -f --no-hostname -o short-iso
+    fi
+}
+
+# ── install ───────────────────────────────────────────────────
+do_install() {
+    header "Installing ice_9 service files"
+
+    # Check if service files exist in deploy/
+    local has_files=false
+    for svc in "${SERVICES[@]}"; do
+        if [[ -f "${DEPLOY_DIR}/${svc}.service" ]]; then
+            has_files=true
+        fi
+    done
+
+    if [[ "$has_files" == false ]]; then
+        echo -e "  ${YLW}No service files found in ${DEPLOY_DIR}/${RST}"
+        echo -e "  Run ${CYN}./install.sh${RST} first to generate them for your environment."
+        exit 1
+    fi
+
+    for svc in "${SERVICES[@]}"; do
+        local src="${DEPLOY_DIR}/${svc}.service"
+        if [[ -f "$src" ]]; then
+            sudo cp "$src" "/etc/systemd/system/${svc}.service"
+            echo -e "  ${GRN}✓${RST} ${svc}.service → /etc/systemd/system/"
+        else
+            echo -e "  ${YLW}!${RST} ${svc}.service not found (skipped)"
+        fi
+    done
+
+    sudo systemctl daemon-reload
+    echo -e "\n${GRN}Daemon reloaded.${RST} Run: ${YLW}ice9-services enable${RST} to auto-start on boot."
+}
+
+# ── uninstall ─────────────────────────────────────────────────
+do_uninstall() {
+    header "Uninstalling ice_9 service files"
+    for svc in "${SERVICES[@]}"; do
+        if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
+            sudo systemctl stop "$svc" 2>/dev/null || true
+            sudo systemctl disable "$svc" 2>/dev/null || true
+            sudo rm "/etc/systemd/system/${svc}.service"
+            echo -e "  ${GRN}✓${RST} Removed ${svc}.service"
+        else
+            echo -e "  ${YLW}!${RST} ${svc}.service not installed (skipped)"
+        fi
+    done
+    sudo systemctl daemon-reload
+    echo -e "\n${GRN}Services removed and daemon reloaded.${RST}"
+}
+
+# ── main ──────────────────────────────────────────────────────
+case "${1:-help}" in
+    install)    do_install ;;
+    uninstall)  do_uninstall ;;
+    start)      do_action start ;;
+    stop)       do_action stop ;;
+    restart)    do_action restart ;;
+    status)     do_status ;;
+    enable)     do_action enable ;;
+    disable)    do_action disable ;;
+    logs)       do_logs "$@" ;;
+    *)
+        echo -e "${CYN}ice9-services${RST} — manage ice_9 API and Dashboard"
+        echo ""
+        echo "Usage:  ice9-services <command> [service]"
+        echo ""
+        echo "Commands:"
+        echo "  install     Copy generated .service files to systemd and reload"
+        echo "  uninstall   Stop, disable, and remove service files from systemd"
+        echo "  start       Start all ice_9 services"
+        echo "  stop        Stop all ice_9 services"
+        echo "  restart     Restart all ice_9 services"
+        echo "  status      Show status of all ice_9 services"
+        echo "  enable      Enable auto-start on boot"
+        echo "  disable     Disable auto-start on boot"
+        echo "  logs        Tail logs (optionally: logs <service-name>)"
+        echo ""
+        echo "Setup:  Run ./install.sh first to generate service files for your environment."
+        ;;
+esac
