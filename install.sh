@@ -129,6 +129,38 @@ if [[ "$PLATFORM" == "macos" ]]; then
     fi
 fi
 
+# ── Check Ollama ──────────────────────────────────────────────
+OLLAMA_RUNNING=false
+if command -v ollama &>/dev/null; then
+    ok "Ollama installed ($(ollama --version 2>/dev/null | head -1 || echo 'found'))"
+    # Check if Ollama is actually running
+    if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+        ok "Ollama is running"
+        OLLAMA_RUNNING=true
+        # Check if default model is pulled
+        if ollama list 2>/dev/null | grep -q "llama3"; then
+            ok "llama3 model available"
+        else
+            warn "No llama3 model found — pull one: ollama pull llama3.2:3b"
+        fi
+    else
+        warn "Ollama is installed but not running"
+        if [[ "$PLATFORM" == "linux" ]]; then
+            warn "Start it: sudo systemctl start ollama"
+        else
+            warn "Start it: open the Ollama app, or run: ollama serve"
+        fi
+    fi
+else
+    warn "Ollama not found — AI features require an LLM provider"
+    if [[ "$PLATFORM" == "macos" ]]; then
+        warn "Install: brew install ollama  (or download from https://ollama.com)"
+    else
+        warn "Install: curl -fsSL https://ollama.com/install.sh | sh"
+    fi
+    warn "Or set ANTHROPIC_API_KEY / OPENAI_API_KEY in .env for cloud providers"
+fi
+
 # ── Create virtual environment ────────────────────────────────
 header "Setting up Python environment"
 
@@ -252,7 +284,8 @@ UNIT
 
         echo ""
         echo -e "  ${YLW}Install services to systemd? This requires sudo.${RST}"
-        read -rp "  Install and enable services? [y/N]: " CONFIRM
+        CONFIRM=""
+        read -rp "  Install and enable services? [y/N]: " CONFIRM || true
         if [[ "${CONFIRM,,}" == "y" ]]; then
             sudo cp "${DEPLOY_DIR}/ice9-api.service" /etc/systemd/system/
             ok "Copied ice9-api.service"
@@ -381,7 +414,8 @@ PLIST
 
         echo ""
         echo -e "  ${YLW}Install services to launchd?${RST}"
-        read -rp "  Install and start services? [y/N]: " CONFIRM
+        CONFIRM=""
+        read -rp "  Install and start services? [y/N]: " CONFIRM || true
         if [[ "${CONFIRM,,}" == "y" ]]; then
             cp "${API_PLIST}" "${LAUNCH_DIR}/"
             launchctl load "${LAUNCH_DIR}/com.ice9.api.plist" 2>/dev/null || true
@@ -414,6 +448,59 @@ if [[ "$PLATFORM" == "macos" ]]; then
     echo -e "  For full tool coverage, run ice_9 on a Linux host or VM."
 fi
 
+# ── Shell activation hint ─────────────────────────────────────
+header "Shell setup"
+
+# Detect shell config file
+SHELL_RC=""
+case "$(basename "${SHELL:-/bin/bash}")" in
+    zsh)  SHELL_RC="$HOME/.zshrc" ;;
+    bash)
+        if [[ "$PLATFORM" == "macos" ]]; then
+            SHELL_RC="$HOME/.bash_profile"
+        else
+            SHELL_RC="$HOME/.bashrc"
+        fi
+        ;;
+    fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
+esac
+
+# Check if alias already exists
+ALIAS_LINE="alias ice9='source ${VENV_DIR}/bin/activate && ice9'"
+ALIAS_EXISTS=false
+if [[ -n "$SHELL_RC" ]] && [[ -f "$SHELL_RC" ]] && grep -qF "alias ice9=" "$SHELL_RC" 2>/dev/null; then
+    ALIAS_EXISTS=true
+fi
+
+if [[ "$ALIAS_EXISTS" == true ]]; then
+    ok "Shell alias already configured in ${SHELL_RC}"
+else
+    echo -e "  To use ${CYN}ice9${RST} without manually activating the venv each time,"
+    echo -e "  you can add a shell alias."
+    echo ""
+    if [[ -n "$SHELL_RC" ]]; then
+        ADD_ALIAS=""
+        read -rp "  Add ice9 alias to ${SHELL_RC}? [y/N]: " ADD_ALIAS || true
+        if [[ "${ADD_ALIAS,,}" == "y" ]]; then
+            echo "" >> "$SHELL_RC"
+            echo "# ice_9 — activate venv automatically" >> "$SHELL_RC"
+            echo "${ALIAS_LINE}" >> "$SHELL_RC"
+            ok "Added alias to ${SHELL_RC}"
+            echo -e "  Run ${CYN}source ${SHELL_RC}${RST} or open a new terminal to use it."
+        else
+            echo ""
+            echo -e "  Skipped. To activate manually each time:"
+            echo -e "    ${CYN}source ${VENV_DIR}/bin/activate${RST}"
+            echo ""
+            echo -e "  Or add this alias yourself:"
+            echo -e "    ${CYN}${ALIAS_LINE}${RST}"
+        fi
+    else
+        echo -e "  Add this to your shell config:"
+        echo -e "    ${CYN}${ALIAS_LINE}${RST}"
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────
 header "Installation complete"
 echo ""
@@ -424,6 +511,10 @@ if [[ "$INSTALL_DASHBOARD" == true ]]; then
 fi
 echo -e "  ${GRN}Services:${RST}   ./ice9-services status"
 echo -e "  ${GRN}Tools:${RST}      ice9 tool list"
+if [[ "$OLLAMA_RUNNING" != true ]]; then
+    echo ""
+    echo -e "  ${YLW}Note:${RST} Start Ollama before using AI features"
+fi
 echo ""
 echo -e "  ${YLW}Quick start:${RST}"
 echo -e "    ice9 campaign create -n \"My Pentest\" -s \"10.10.10.0/24\""
