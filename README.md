@@ -1,6 +1,6 @@
 # ice_9
 
-![ice_9](https://raw.githubusercontent.com/b-3llum/ice-9/main/assets/banner.png)
+![ice_9](assets/banner.png)
 
 **Red Team Orchestration Platform — MITRE ATT&CK-Aligned Campaign Management**
 
@@ -21,32 +21,35 @@ Instead of running tools manually and tracking findings in spreadsheets, ice_9 p
 
 ## Architecture
 
-```
-                      ┌───────────────────────────┐
-                      │      Dashboard (React)     │
-                      │  PhaseTimeline │ ActivityFeed│ FindingsTable
-                      └──────────┬────────────────┘
-                            SSE / REST
-                      ┌──────────┴────────────────┐
-                      │     FastAPI REST Server     │
-                      │  /campaigns  /phases  /ai   │
-                      │  /tools  /events/stream     │
-                      └──────────┬────────────────┘
-                           EventBus (pub/sub)
-             ┌───────────────┼───────────────┐
-             │               │               │
-     ┌───────┴──────┐ ┌─────┴──────┐ ┌──────┴──────┐
-     │ Phase Engine │ │  AI Team   │ │ Tool Runner │
-     │ 13 ATT&CK   │ │ 6 Agents   │ │ 16 Wrappers │
-     │ modules      │ │ multi-LLM  │ │ subprocess  │
-     └───────┬──────┘ └─────┬──────┘ └──────┬──────┘
-             └───────────────┼───────────────┘
-                      ┌──────┴──────┐
-                      │   SQLite    │
-                      │ campaigns,  │
-                      │ findings,   │
-                      │ audit trail │
-                      └─────────────┘
+```mermaid
+graph TD
+    subgraph Frontend
+        Dashboard["Dashboard (React)<br/>PhaseTimeline · ActivityFeed · FindingsTable"]
+    end
+
+    subgraph API["FastAPI REST Server"]
+        Endpoints["/campaigns · /phases · /ai<br/>/tools · /events/stream"]
+        EventBus["EventBus (pub/sub)"]
+    end
+
+    subgraph Core
+        Phases["Phase Engine<br/>13 ATT&CK modules"]
+        AI["AI Team<br/>6 Agents · multi-LLM"]
+        Tools["Tool Runner<br/>16 Wrappers · subprocess"]
+    end
+
+    subgraph Storage
+        DB[("SQLite<br/>campaigns · findings · audit")]
+    end
+
+    Dashboard -- "SSE / REST" --> Endpoints
+    Endpoints --> EventBus
+    EventBus --> Phases
+    EventBus --> AI
+    EventBus --> Tools
+    Phases --> DB
+    AI --> DB
+    Tools --> DB
 ```
 
 ---
