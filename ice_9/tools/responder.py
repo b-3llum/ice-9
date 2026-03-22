@@ -6,7 +6,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
+
+
+RESPONDER_PATHS = [
+    Path("/opt/Responder/Responder.py"),
+    Path.home() / "tools" / "Responder" / "Responder.py",
+    Path("/usr/share/responder/Responder.py"),
+]
 
 
 class ResponderWrapper(ToolWrapper):
@@ -17,9 +24,45 @@ class ResponderWrapper(ToolWrapper):
     binary = "responder"
     att_ck_ids = ["T1557.001", "T1040"]
 
+    def __init__(self) -> None:
+        super().__init__()
+
+        # If `responder` isn't on PATH, check known install locations
+        if not resolve_binary(self.binary):
+            for path in RESPONDER_PATHS:
+                if path.exists():
+                    self.binary = str(path)
+                    break
+
+    def is_available(self) -> bool:
+        if resolve_binary(self.binary):
+            return True
+        return Path(self.binary).exists()
+
+    def get_binary_path(self) -> str:
+        if Path(self.binary).exists():
+            return self.binary
+        return super().get_binary_path()
+
+    def get_info(self) -> dict[str, Any]:
+        available = self.is_available()
+        return {
+            "name": self.name,
+            "description": self.description,
+            "binary": self.binary,
+            "available": available,
+            "binary_path": self.get_binary_path() if available else None,
+            "att_ck_ids": self.att_ck_ids,
+        }
+
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         """Build Responder command. Target is the network interface (e.g. eth0)."""
-        cmd = [self.get_binary_path(), "-I", target]
+        binary = self.get_binary_path()
+        # If it's a .py file, run it with python3
+        if binary.endswith(".py"):
+            cmd = ["python3", binary, "-I", target]
+        else:
+            cmd = [binary, "-I", target]
 
         if kwargs.get("analyze"):
             cmd.append("-A")  # Analyze mode — listen only, no poisoning

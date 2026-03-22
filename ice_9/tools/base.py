@@ -2,13 +2,55 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import shutil
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+
+def _extra_search_paths() -> list[str]:
+    """Build extra PATH entries: venv bin, ~/go/bin, ~/.local/bin."""
+    extra: list[str] = []
+
+    # The venv's own bin directory (where pip installs console_scripts)
+    venv_bin = Path(sys.prefix) / "bin"
+    if venv_bin.is_dir():
+        extra.append(str(venv_bin))
+
+    home = Path.home()
+
+    # Go binaries
+    go_bin = home / "go" / "bin"
+    if go_bin.is_dir():
+        extra.append(str(go_bin))
+
+    # pipx / user-local installs
+    local_bin = home / ".local" / "bin"
+    if local_bin.is_dir():
+        extra.append(str(local_bin))
+
+    return extra
+
+
+def resolve_binary(name: str) -> Optional[str]:
+    """Find a binary on PATH + venv/go/local bin dirs."""
+    # Standard PATH first
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # Search extra dirs
+    for d in _extra_search_paths():
+        candidate = os.path.join(d, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    return None
 
 
 @dataclass
@@ -48,12 +90,12 @@ class ToolWrapper(ABC):
 
     def is_available(self) -> bool:
         """Check if the tool binary is installed and accessible."""
-        return shutil.which(self.binary) is not None
+        return resolve_binary(self.binary) is not None
 
     def get_binary_path(self) -> str:
         """Get the full path to the tool binary."""
         if not self._binary_path:
-            self._binary_path = shutil.which(self.binary) or self.binary
+            self._binary_path = resolve_binary(self.binary) or self.binary
         return self._binary_path
 
     @abstractmethod
@@ -83,9 +125,16 @@ class ToolWrapper(ABC):
             data={"tool": self.name, "target": target, "command": " ".join(cmd)},
         ))
 
+        # Ensure venv/go/local bins are visible to subprocesses
+        env = os.environ.copy()
+        extra = _extra_search_paths()
+        if extra:
+            env["PATH"] = os.pathsep.join(extra) + os.pathsep + env.get("PATH", "")
+
         try:
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                env=env,
             )
 
             stdout_lines: list[str] = []
@@ -166,7 +215,7 @@ class ToolWrapper(ABC):
 
     def get_info(self) -> dict[str, Any]:
         """Get tool metadata."""
-        resolved = shutil.which(self.binary)
+        resolved = resolve_binary(self.binary)
         return {
             "name": self.name,
             "description": self.description,

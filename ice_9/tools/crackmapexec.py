@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
 
 
 class CrackMapExecWrapper(ToolWrapper):
@@ -24,8 +24,7 @@ class CrackMapExecWrapper(ToolWrapper):
     def __init__(self) -> None:
         super().__init__()
         # Fall back to crackmapexec if nxc not available
-        import shutil
-        if not shutil.which("nxc"):
+        if not resolve_binary("nxc"):
             self.binary = "crackmapexec"
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:

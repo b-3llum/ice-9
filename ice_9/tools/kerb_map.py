@@ -44,6 +44,17 @@ class KerbMapWrapper(ToolWrapper):
             self._kerb_map_available = super().is_available()
         return self._kerb_map_available
 
+    def get_info(self) -> dict[str, Any]:
+        """Override to report availability via Python import, not shutil.which."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "binary": str(KERB_MAP_PATH / "kerb-map.py"),
+            "available": self.is_available(),
+            "binary_path": str(KERB_MAP_PATH / "kerb-map.py") if self.is_available() else None,
+            "att_ck_ids": self.att_ck_ids,
+        }
+
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         """Build kerb-map CLI command."""
         cmd = ["python3", str(KERB_MAP_PATH / "kerb-map.py")]

@@ -5,11 +5,26 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
 
 
 class ImpacketTool(ToolWrapper):
-    """Base for Impacket script wrappers."""
+    """Base for Impacket script wrappers.
+
+    Handles both naming conventions:
+      - impacket-secretsdump  (system/distro packages)
+      - secretsdump.py        (pip install impacket)
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        # If the primary binary isn't found, try the .py variant
+        if not resolve_binary(self.binary):
+            # "impacket-secretsdump" -> "secretsdump.py"
+            alt = self.binary.replace("impacket-", "") + ".py"
+            if resolve_binary(alt):
+                self.binary = alt
 
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         lines = result.stdout.strip().splitlines()
