@@ -1,0 +1,265 @@
+@startuml ice_9 — Domain Model
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 10
+skinparam shadowing false
+skinparam RoundCorner 8
+skinparam ClassBackgroundColor #2a2a4a
+skinparam ClassBorderColor #4c6ef5
+skinparam ClassFontColor #e0e0e0
+skinparam ClassAttributeFontColor #a0a0c0
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam PackageBackgroundColor #0f0f1a
+skinparam PackageBorderColor #4c6ef5
+skinparam PackageFontColor #748ffc
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+skinparam EnumBackgroundColor #1f1f3a
+skinparam EnumBorderColor #748ffc
+skinparam EnumFontColor #e0e0e0
+
+title **ice_9 — Domain Model (core/models.py)**
+
+package "Campaign Domain" {
+  class Campaign {
+    + id : str (UUID)
+    + name : str
+    + client : str
+    + status : CampaignStatus
+    + scope : list[str]
+    + exclusions : list[str]
+    + rules_of_engagement : RulesOfEngagement
+    + phases : list[Phase]
+    + created_at : datetime
+    + updated_at : datetime
+  }
+
+  class RulesOfEngagement {
+    + scope : list[str]
+    + exclusions : list[str]
+    + testing_window : str
+    + authorization : str
+    + emergency_contact : str
+  }
+
+  class Phase {
+    + id : str (UUID)
+    + campaign_id : str
+    + phase_type : PhaseType
+    + status : PhaseStatus
+    + tasks : list[Task]
+    + findings : list[Finding]
+    + started_at : datetime
+    + completed_at : datetime
+  }
+
+  class Task {
+    + id : str (UUID)
+    + phase_id : str
+    + tool : str
+    + target : str
+    + params : dict
+    + output : str
+    + status : TaskStatus
+    + findings : list[Finding]
+    + started_at : datetime
+    + completed_at : datetime
+  }
+
+  class Finding {
+    + id : str (UUID)
+    + title : str
+    + description : str
+    + severity : Severity
+    + cvss : float
+    + cve_ids : list[str]
+    + att_ck_ids : list[str]
+    + evidence : list[Evidence]
+    + remediation : str
+    + affected_assets : list[str]
+  }
+
+  class Evidence {
+    + id : str (UUID)
+    + finding_id : str
+    + evidence_type : str
+    + content : str
+    + file_path : str
+    + collected_at : datetime
+  }
+}
+
+package "Intelligence Graph" {
+  class Entity {
+    + id : str (UUID)
+    + entity_type : EntityType
+    + name : str
+    + properties : dict
+    + confidence : float [0-1]
+    + sources : list[str]
+    + campaign_id : str
+  }
+
+  class Relationship {
+    + id : str (UUID)
+    + rel_type : RelType
+    + source_id : str
+    + target_id : str
+    + properties : dict
+    + confidence : float [0-1]
+    + campaign_id : str
+  }
+
+  class SubjectProfile {
+    + id : str (UUID)
+    + entity_id : str
+    + emails : list[str]
+    + social_accounts : dict
+    + organizational_role : str
+    + department : str
+    + interests : list[str]
+    + susceptibility_scores : SusScores
+    + behavioral_predictions : list[dict]
+  }
+
+  class SusScores <<value>> {
+    + phishing : float
+    + pretexting : float
+    + baiting : float
+  }
+}
+
+package "Enumerations" {
+  enum CampaignStatus {
+    PLANNING
+    ACTIVE
+    PAUSED
+    COMPLETED
+    ABORTED
+  }
+
+  enum PhaseStatus {
+    PENDING
+    IN_PROGRESS
+    COMPLETED
+    SKIPPED
+  }
+
+  enum PhaseType {
+    RECON (TA0043)
+    RESOURCE_DEV (TA0042)
+    INITIAL_ACCESS (TA0001)
+    EXECUTION (TA0002)
+    PERSISTENCE (TA0003)
+    PRIV_ESC (TA0004)
+    DEFENSE_EVASION (TA0005)
+    CREDENTIAL_ACCESS (TA0006)
+    DISCOVERY (TA0007)
+    LATERAL_MOVEMENT (TA0008)
+    COLLECTION (TA0009)
+    EXFILTRATION (TA0010)
+    IMPACT (TA0040)
+  }
+
+  enum Severity {
+    CRITICAL
+    HIGH
+    MEDIUM
+    LOW
+    INFO
+  }
+
+  enum EntityType {
+    PERSON
+    HOST
+    DOMAIN
+    EMAIL
+    CREDENTIAL
+    SERVICE
+    NETWORK
+    ORGANIZATION
+  }
+
+  enum RelType {
+    HAS_CREDENTIAL
+    ADMIN_OF
+    MEMBER_OF
+    RUNS_SERVICE
+    RESOLVES_TO
+    BELONGS_TO
+    CONNECTED_TO
+    OWNS
+  }
+}
+
+package "AI Agents" {
+  class Agent {
+    + role : AgentRole
+    + provider : str
+    + model : str
+    + system_prompt : str
+    + memory : list[Message]
+  }
+
+  enum AgentRole {
+    COORDINATOR
+    RECON_ANALYST
+    EXPLOIT_RESEARCHER
+    SOCIAL_ENGINEER
+    REPORT_WRITER
+    CODE_ANALYST
+    INTELLIGENCE_ANALYST
+  }
+}
+
+package "Tool Framework" {
+  abstract class ToolWrapper {
+    + name : str
+    + {abstract} build_command() : list[str]
+    + {abstract} parse_output() : ToolResult
+    + execute() : ToolResult
+  }
+
+  class ToolResult {
+    + tool : str
+    + target : str
+    + output : str
+    + parsed : dict
+    + success : bool
+    + duration : float
+  }
+
+  class ToolSchema {
+    + name : str
+    + description : str
+    + parameters : dict
+    + to_function_schema() : dict
+  }
+}
+
+' --- Relationships ---
+Campaign "1" *-- "0..*" Phase
+Campaign --> CampaignStatus
+Campaign *-- RulesOfEngagement
+Phase "1" *-- "0..*" Task
+Phase "1" *-- "0..*" Finding
+Phase --> PhaseStatus
+Phase --> PhaseType
+Task --> Finding : generates
+Finding "1" *-- "0..*" Evidence
+Finding --> Severity
+Entity --> EntityType
+Relationship --> RelType
+Relationship "0..*" --> "1" Entity : source
+Relationship "0..*" --> "1" Entity : target
+SubjectProfile "1" --> "1" Entity : profiles
+SubjectProfile *-- SusScores
+Entity "0..*" --o Campaign : belongs to
+Agent --> AgentRole
+ToolWrapper --> ToolResult : produces
+Task --> ToolWrapper : uses
+
+@enduml

@@ -1,0 +1,108 @@
+@startuml ice_9 — State Machines
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam RoundCorner 8
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam StateBackgroundColor #2a2a4a
+skinparam StateBorderColor #4c6ef5
+skinparam StateFontColor #e0e0e0
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+
+title **ice_9 — Campaign & Phase State Machines**
+
+state "Campaign Lifecycle" as campaign {
+  [*] --> PLANNING : create campaign
+
+  PLANNING --> ACTIVE : start first phase\nor manual activation
+  PLANNING --> ABORTED : abort
+
+  ACTIVE --> PAUSED : pause
+  ACTIVE --> COMPLETED : all phases done
+  ACTIVE --> ABORTED : abort
+
+  PAUSED --> ACTIVE : resume
+
+  COMPLETED --> [*]
+  ABORTED --> [*]
+
+  PLANNING : Initial setup
+  PLANNING : Define scope, RoE
+  PLANNING : AI generates plan
+
+  ACTIVE : Phases executing
+  ACTIVE : Tools running
+  ACTIVE : Entities being extracted
+
+  PAUSED : Temporarily halted
+  PAUSED : State preserved
+
+  COMPLETED : All phases finished
+  COMPLETED : Report generated
+
+  ABORTED : Emergency stop
+  ABORTED : Audit trail preserved
+}
+
+--
+
+state "Phase Lifecycle" as phase {
+  [*] --> PENDING : campaign created
+
+  PENDING --> IN_PROGRESS : operator starts phase
+  PENDING --> SKIPPED : operator skips phase
+
+  IN_PROGRESS --> COMPLETED : all tasks done\n+ analysis complete
+
+  SKIPPED --> [*]
+  COMPLETED --> [*]
+
+  PENDING : Waiting for execution
+  PENDING : May have AI-generated plan
+
+  IN_PROGRESS : Tasks executing
+  IN_PROGRESS : Tools running
+  IN_PROGRESS : Entities extracted per task
+  IN_PROGRESS : Findings generated
+
+  COMPLETED : Results analyzed
+  COMPLETED : Entities enriched
+  COMPLETED : Findings stored
+
+  SKIPPED : Phase not applicable
+  SKIPPED : Logged in audit
+}
+
+--
+
+state "MITRE ATT&CK Phase Order" as mitre {
+  [*] --> TA0043_Recon
+  TA0043_Recon --> TA0042_Resource_Dev
+  TA0042_Resource_Dev --> TA0001_Initial_Access
+  TA0001_Initial_Access --> TA0002_Execution
+  TA0002_Execution --> TA0003_Persistence
+  TA0003_Persistence --> TA0004_Priv_Esc
+  TA0004_Priv_Esc --> TA0005_Defense_Evasion
+  TA0005_Defense_Evasion --> TA0006_Credential_Access
+  TA0006_Credential_Access --> TA0007_Discovery
+  TA0007_Discovery --> TA0008_Lateral_Movement
+  TA0008_Lateral_Movement --> TA0009_Collection
+  TA0009_Collection --> TA0010_Exfiltration
+  TA0010_Exfiltration --> TA0040_Impact
+  TA0040_Impact --> [*]
+}
+
+note right of mitre
+  Each phase can be
+  EXECUTED or SKIPPED.
+  Phases may run
+  in any order per
+  operator discretion.
+end note
+
+@enduml

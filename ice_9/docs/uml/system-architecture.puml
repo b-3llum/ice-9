@@ -1,0 +1,178 @@
+@startuml ice_9 — System Architecture
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam RoundCorner 10
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+
+skinparam component {
+  BackgroundColor #2a2a4a
+  BorderColor #4c6ef5
+  FontColor #e0e0e0
+}
+skinparam package {
+  BackgroundColor #0f0f1a
+  BorderColor #4c6ef5
+  FontColor #748ffc
+}
+skinparam database {
+  BackgroundColor #2a2a4a
+  BorderColor #4c6ef5
+  FontColor #e0e0e0
+}
+skinparam actor {
+  BackgroundColor #4c6ef5
+  BorderColor #748ffc
+  FontColor #e0e0e0
+}
+skinparam note {
+  BackgroundColor #2a2a4a
+  BorderColor #748ffc
+  FontColor #e0e0e0
+}
+skinparam interface {
+  BackgroundColor #4c6ef5
+  BorderColor #748ffc
+}
+
+title **ice_9 — Red Team Orchestration Platform**
+
+actor "Operator" as operator
+actor "Dashboard\nClient" as dashboard
+
+package "Interface Layer" as iface {
+  component "CLI\n(Typer)" as cli
+  component "REST API\n(FastAPI)" as api
+  component "SSE Stream\n/events/stream" as sse
+}
+
+package "Orchestration Layer" as orch {
+  component "Campaign\nManager" as campaign_mgr
+  component "Phase\nModules (x13)" as phases
+  component "State\nMachine" as state
+  component "Event\nBus" as events
+}
+
+package "AI Layer" as ai_layer {
+  component "Team\nOrchestrator" as team
+  component "Agent Roles (x7)\nCoordinator | Recon\nExploit | Social\nReport | Code | Intel" as agents
+  component "LLM Client\n(Multi-Provider)" as llm_client
+  component "Planner" as planner
+  component "Analyzer" as analyzer
+  component "RAG\nPipeline" as rag
+}
+
+package "Tool Layer" as tool_layer {
+  component "Tool Registry\n& Factory" as tool_reg
+  component "Nmap" as nmap
+  component "Nuclei" as nuclei
+  component "Metasploit" as msf
+  component "BloodHound" as bh
+  component "CrackMapExec" as cme
+  component "Impacket" as imp
+  component "OSINT\nAmass|Subfinder\nTheHarvester" as osint
+}
+
+package "Intelligence Layer" as intel_layer {
+  component "Entity\nExtractor" as extractor
+  component "Enrichment\nEngine" as enrichment
+  component "Subject\nProfiler" as profiler
+  component "Behavioral\nSimulator" as simulator
+}
+
+package "Output Layer" as output_layer {
+  component "Report\nGenerator" as report
+  component "Executive\nSummary" as exec_sum
+  component "Attack\nNarrative" as narrative
+  component "Rich Console\nOutput" as console
+}
+
+database "SQLite\n(WAL mode)" as db {
+  component "campaigns" as t_campaigns
+  component "phases / tasks" as t_phases
+  component "findings / evidence" as t_findings
+  component "entities / relationships" as t_entities
+  component "subject_profiles" as t_profiles
+}
+
+database "Audit Log\n(JSONL)" as audit
+
+cloud "LLM Providers" as providers {
+  component "Claude\nAnthropic" as claude
+  component "OpenAI\nGPT-4" as openai
+  component "Ollama\nLocal" as ollama
+  component "Groq" as groq
+  component "Mistral" as mistral_p
+}
+
+' --- Connections ---
+operator --> cli
+operator --> api
+dashboard --> api
+dashboard --> sse
+
+cli --> campaign_mgr
+api --> campaign_mgr
+api --> events
+
+campaign_mgr --> state : validate transitions
+campaign_mgr --> phases : execute
+campaign_mgr --> events : emit
+campaign_mgr --> db : persist
+
+phases --> tool_reg : invoke tools
+phases --> planner : ai_plan()
+phases --> analyzer : analyze_results()
+phases --> extractor : extract entities
+
+tool_reg --> nmap
+tool_reg --> nuclei
+tool_reg --> msf
+tool_reg --> bh
+tool_reg --> cme
+tool_reg --> imp
+tool_reg --> osint
+
+extractor --> enrichment : enrich entities
+enrichment --> profiler : build profiles
+profiler --> simulator : run simulations
+
+planner --> team
+analyzer --> team
+enrichment --> team
+team --> agents : dispatch
+agents --> llm_client
+llm_client --> providers
+
+campaign_mgr --> audit : log actions
+phases --> audit
+
+extractor --> db : store entities
+enrichment --> db
+profiler --> db
+
+report --> exec_sum
+report --> narrative
+report --> db : read findings
+exec_sum --> team : AI generation
+narrative --> team
+
+events --> sse : stream
+cli --> console : display
+
+note right of state
+  Campaign: PLANNING → ACTIVE → COMPLETED
+  Phase: PENDING → IN_PROGRESS → COMPLETED
+  Strict transition validation
+end note
+
+note bottom of simulator
+  Monte Carlo simulation
+  of social engineering
+  scenarios (5 defaults)
+end note
+
+@enduml

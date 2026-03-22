@@ -1,0 +1,109 @@
+@startuml AI Layer — Component Diagram
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam RoundCorner 10
+skinparam ComponentBackgroundColor #2a2a4a
+skinparam ComponentBorderColor #4c6ef5
+skinparam ComponentFontColor #e0e0e0
+skinparam PackageBackgroundColor #0f0f1a
+skinparam PackageBorderColor #4c6ef5
+skinparam PackageFontColor #748ffc
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+skinparam InterfaceBackgroundColor #4c6ef5
+skinparam InterfaceBorderColor #748ffc
+
+title **AI Layer — Agent Orchestration Detail**
+
+package "ai/" {
+
+  component "TeamOrchestrator\n(team.py)" as team {
+    component "Agent\nDispatcher" as dispatch
+    component "Result\nMerger" as merger
+    component "Fallback\nChain" as fallback
+  }
+
+  component "Agent Definitions\n(agents.py)" as agents
+
+  component "Agent Loop\n(agent_loop.py)" as loop {
+    component "Reasoning\nEngine" as reason
+    component "Tool\nInvocation" as tool_invoke
+  }
+
+  component "LLM Client\n(llm.py)" as llm_client
+
+  component "Provider Registry\n(providers.py)" as registry
+
+  component "Planner\n(planner.py)" as planner
+  component "Analyzer\n(analyzer.py)" as analyzer
+  component "Router\n(router.py)" as router
+  component "Orchestrator Context\n(orchestrator.py)" as context
+  component "Memory\n(memory.py)" as memory
+
+  component "System Prompts\n(prompts/agent_system.py)" as prompts
+
+  package "RAG Pipeline (rag/)" {
+    component "Ingest\n(ingest.py)" as ingest
+    component "Vector Store\n(store.py)" as vecstore
+  }
+}
+
+package "LLM Providers" as providers {
+  component "Anthropic\n(Claude)" as p_claude
+  component "OpenAI\n(GPT-4)" as p_openai
+  component "Ollama\n(Local)" as p_ollama
+  component "Groq" as p_groq
+  component "Mistral" as p_mistral
+}
+
+' Agent role annotations
+note right of agents
+  7 Specialized Roles:
+  ────────────────────
+  COORDINATOR
+    → Engagement planning
+  RECON_ANALYST
+    → Scan analysis
+  EXPLOIT_RESEARCHER
+    → Vuln assessment
+  SOCIAL_ENGINEER
+    → SE profiling
+  REPORT_WRITER
+    → Doc generation
+  CODE_ANALYST
+    → Script review
+  INTELLIGENCE_ANALYST
+    → Entity enrichment
+end note
+
+' Connections
+dispatch --> agents : select role
+dispatch --> loop : execute
+dispatch --> fallback : on failure\ntry next provider
+
+loop --> llm_client : send prompt
+loop --> tool_invoke : if function call
+loop --> memory : read/write context
+
+llm_client --> registry : resolve provider
+registry --> providers : HTTP API
+
+planner --> team : Coordinator agent
+analyzer --> team : Exploit Researcher
+router --> agents : match task → role
+context --> team : inject campaign state
+
+prompts --> agents : role-specific\nsystem prompts
+
+merger --> dispatch : combine\nmulti-agent results
+
+ingest --> vecstore : embed documents
+vecstore --> loop : retrieval context
+
+@enduml

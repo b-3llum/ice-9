@@ -1,0 +1,157 @@
+@startuml Campaign Execution Flow
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 10
+skinparam shadowing false
+skinparam SequenceLifeLineBorderColor #4c6ef5
+skinparam SequenceLifeLineBackgroundColor #2a2a4a
+skinparam ParticipantBackgroundColor #2a2a4a
+skinparam ParticipantBorderColor #4c6ef5
+skinparam ParticipantFontColor #e0e0e0
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam SequenceBoxBackgroundColor #0f0f1a
+skinparam SequenceBoxBorderColor #4c6ef5
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+skinparam SequenceGroupBackgroundColor #1a1a2e
+skinparam SequenceGroupBorderColor #4c6ef5
+
+title **Campaign Execution Lifecycle**
+
+actor Operator as Op
+participant "CLI / API" as UI
+participant "Campaign\nManager" as CM
+participant "State\nMachine" as SM
+participant "Phase\nModule" as PM
+participant "Tool\nRegistry" as TR
+participant "Entity\nExtractor" as EX
+participant "Team\nOrchestrator" as TO
+participant "LLM\nProvider" as LLM
+participant "SQLite\nStore" as DB
+participant "Audit\nLog" as AL
+participant "Event\nBus" as EB
+
+== Campaign Creation ==
+
+Op -> UI : create campaign\n(name, scope, client, RoE)
+UI -> CM : create(params)
+activate CM
+CM -> DB : insert campaign (PLANNING)
+CM -> AL : log(campaign.create)
+CM -> EB : emit(CAMPAIGN_CREATED)
+CM --> UI : Campaign{id, status=PLANNING}
+deactivate CM
+
+== AI Planning ==
+
+Op -> UI : plan campaign
+UI -> TO : generate_plan(campaign)
+activate TO
+TO -> LLM : Coordinator agent\n+ campaign context
+LLM --> TO : engagement plan\n(phases, priorities, approach)
+TO --> UI : plan summary
+deactivate TO
+
+== Phase Execution (per phase) ==
+
+Op -> UI : start phase (RECON)
+UI -> CM : start_phase(campaign_id, RECON)
+activate CM
+CM -> SM : validate(PENDING → IN_PROGRESS)
+SM --> CM : valid
+CM -> DB : update phase status
+CM -> AL : log(phase.start)
+CM -> EB : emit(PHASE_START)
+
+group Phase Planning
+  CM -> PM : plan()
+  activate PM
+  PM -> PM : generate task list\n(deterministic)
+  PM -> TO : ai_plan()\n(enhance with AI)
+  activate TO
+  TO -> LLM : Recon Analyst\n+ scope context
+  LLM --> TO : suggested tasks
+  TO --> PM : AI suggestions
+  deactivate TO
+  PM --> CM : task list
+  deactivate PM
+end
+
+group Task Execution (per task)
+  CM -> EB : emit(TASK_START)
+  CM -> TR : execute(tool, target, params)
+  activate TR
+  TR -> TR : resolve_binary()\nbuild_command()
+  TR -> TR : subprocess.run()
+  TR -> TR : parse_output()
+  TR --> CM : ToolResult
+  deactivate TR
+
+  CM -> DB : store task + output
+
+  CM -> EX : extract(tool_result)
+  activate EX
+  EX -> EX : parse entities\n& relationships
+  EX -> DB : upsert entities\n(deduplicate)
+  EX --> CM : extracted entities
+  deactivate EX
+
+  CM -> EB : emit(TOOL_COMPLETE)
+end
+
+group Analysis
+  CM -> TO : analyze_results(phase_output)
+  activate TO
+  TO -> LLM : Exploit Researcher\n+ tool outputs
+  LLM --> TO : findings + severity
+  TO --> CM : Finding[]
+  deactivate TO
+  CM -> DB : store findings
+  CM -> EB : emit(FINDING_NEW)
+end
+
+CM -> DB : update phase → COMPLETED
+CM -> AL : log(phase.complete)
+CM -> EB : emit(PHASE_COMPLETE)
+deactivate CM
+
+== Intelligence Enrichment ==
+
+Op -> UI : enrich entities
+UI -> EX : enrich(campaign_id)
+activate EX
+EX -> DB : get entities
+EX -> TO : Intelligence Analyst\n+ entity data
+activate TO
+TO -> LLM : enrich + profile
+LLM --> TO : enriched properties\nsubject profiles
+TO --> EX : enrichment results
+deactivate TO
+EX -> DB : update entities\nstore profiles
+EX --> UI : enrichment summary
+deactivate EX
+
+== Report Generation ==
+
+Op -> UI : generate report
+UI -> UI : ReportGenerator
+activate UI
+UI -> DB : read all findings
+UI -> TO : Executive Summary
+activate TO
+TO -> LLM : Report Writer
+LLM --> TO : summary text
+deactivate TO
+UI -> TO : Attack Narrative
+activate TO
+TO -> LLM : Report Writer\n+ kill chain
+LLM --> TO : narrative text
+deactivate TO
+UI -> UI : build DOCX\n(findings, remediation, evidence)
+UI --> Op : report.docx
+deactivate UI
+
+@enduml

@@ -1,0 +1,118 @@
+@startuml ice_9 — Deployment Topology
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam RoundCorner 10
+skinparam NodeBackgroundColor #2a2a4a
+skinparam NodeBorderColor #4c6ef5
+skinparam NodeFontColor #e0e0e0
+skinparam ArtifactBackgroundColor #1f1f3a
+skinparam ArtifactBorderColor #748ffc
+skinparam ArtifactFontColor #a0a0c0
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+skinparam DatabaseBackgroundColor #2a2a4a
+skinparam DatabaseBorderColor #4c6ef5
+
+title **ice_9 — Deployment Topology**
+
+node "Operator Workstation" as operator {
+  artifact "Terminal / Shell" as term
+  artifact "Dashboard Client\n(Browser)" as browser
+}
+
+node "ice_9 Server" as server {
+  node "Python Runtime" as python {
+    artifact "main.py\n(Entry Point)" as main
+    artifact "cli.py\n(Typer CLI)" as cli
+    artifact "api.py\n(FastAPI :8000)" as api
+
+    artifact "Campaign Manager\n+ Phase Modules" as core
+    artifact "AI Orchestrator\n+ Agent Pool" as ai
+    artifact "Intel Pipeline\n(Extract → Enrich → Profile → Simulate)" as intel
+    artifact "Report Generator\n(DOCX output)" as report
+  }
+
+  database "~/.ice9/ice9.db\nSQLite (WAL)" as db
+  database "~/.ice9/audit/\nJSONL logs" as audit
+  database "~/.ice9/evidence/\nCaptures & artifacts" as evidence
+}
+
+node "Tool Host" as tools {
+  artifact "nmap" as nmap
+  artifact "nuclei" as nuclei
+  artifact "metasploit\n(msfrpc)" as msf
+  artifact "crackmapexec" as cme
+  artifact "bloodhound" as bh
+  artifact "impacket\n(secretsdump, etc.)" as imp
+  artifact "amass / subfinder\n/ theharvester" as osint
+  artifact "responder" as resp
+}
+
+cloud "LLM Providers" as llm {
+  node "Anthropic API" as claude {
+    artifact "Claude\nclaude-opus-4.6" as claude_model
+  }
+  node "OpenAI API" as openai {
+    artifact "GPT-4" as gpt4
+  }
+  node "Ollama (Local)" as ollama {
+    artifact "llama3 / mistral" as local_model
+  }
+  node "Groq API" as groq {
+    artifact "LLaMA / Mixtral" as groq_model
+  }
+}
+
+cloud "Target Network\n(in scope)" as target {
+  node "Target Hosts" as hosts
+  node "Target Services" as services
+  node "Active Directory" as ad
+}
+
+' --- Connections ---
+term --> cli : ice9 commands
+browser --> api : HTTP REST + SSE
+
+cli --> core
+api --> core
+core --> db : read/write
+core --> audit : append-only
+core --> evidence : store captures
+core --> ai : planning, analysis
+
+ai --> llm : HTTPS API calls\n(or localhost for Ollama)
+
+core --> tools : subprocess / RPC
+tools --> target : scans, exploits,\nenumeration
+
+intel --> db : entities,\nrelationships,\nprofiles
+report --> db : read findings
+
+note right of db
+  Single-file database.
+  WAL mode for concurrent
+  read/write.
+  Schema v2.
+end note
+
+note bottom of tools
+  Tools may be co-located
+  on the ice_9 server or
+  on a separate attack box.
+  Paths configured in
+  settings.yaml
+end note
+
+note right of ollama
+  Fully local inference.
+  No data leaves
+  the network.
+end note
+
+@enduml

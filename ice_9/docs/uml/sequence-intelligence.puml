@@ -1,0 +1,121 @@
+@startuml Intelligence Pipeline Flow
+
+skinparam backgroundColor #0f0f1a
+skinparam defaultFontColor #e0e0e0
+skinparam defaultFontSize 10
+skinparam shadowing false
+skinparam SequenceLifeLineBorderColor #4c6ef5
+skinparam SequenceLifeLineBackgroundColor #2a2a4a
+skinparam ParticipantBackgroundColor #2a2a4a
+skinparam ParticipantBorderColor #4c6ef5
+skinparam ParticipantFontColor #e0e0e0
+skinparam ArrowColor #748ffc
+skinparam ArrowThickness 2
+skinparam NoteBackgroundColor #2a2a4a
+skinparam NoteBorderColor #748ffc
+skinparam NoteFontColor #e0e0e0
+skinparam SequenceGroupBackgroundColor #1a1a2e
+skinparam SequenceGroupBorderColor #4c6ef5
+
+title **Intelligence Pipeline — Entity to Profile**
+
+participant "Tool Output\n(Nmap XML,\nNuclei JSON)" as raw
+participant "Entity\nExtractor" as ext
+participant "SQLite\nStore" as db
+participant "Enrichment\nEngine" as enr
+participant "Team\nOrchestrator" as team
+participant "LLM\n(Intel Analyst)" as llm
+participant "Subject\nProfiler" as prof
+participant "Behavioral\nSimulator" as sim
+
+== 1. Extraction ==
+
+raw -> ext : tool_result
+activate ext
+ext -> ext : detect output format\n(XML/JSON/text)
+ext -> ext : parse → Entity[]\n+ Relationship[]
+
+note right of ext
+  Nmap → HOST, SERVICE entities
+  Subfinder → DOMAIN entities
+  BloodHound → PERSON, ORG entities
+  + AD relationships
+end note
+
+ext -> db : upsert entities\n(dedup by type+name,\nincrease confidence)
+ext -> db : upsert relationships
+ext --> raw : entity count
+deactivate ext
+
+== 2. Enrichment ==
+
+enr -> db : query entities\n(by campaign)
+activate enr
+db --> enr : Entity[]
+
+loop for each entity needing enrichment
+  enr -> team : analyze entity\n+ connected entities
+  activate team
+  team -> llm : "Enrich this entity:\n{type, name, properties,\nconnected entities}"
+  activate llm
+  llm --> team : inferred properties\n(role, dept, interests,\ndigital footprint)
+  deactivate llm
+  team --> enr : enrichment data
+  deactivate team
+  enr -> db : update entity properties
+end
+
+deactivate enr
+
+== 3. Profiling (PERSON entities) ==
+
+prof -> db : query PERSON entities
+activate prof
+db --> prof : person Entity[]
+
+loop for each person
+  prof -> db : get connected entities\n(emails, hosts, creds, orgs)
+  db --> prof : related Entity[]\n+ Relationship[]
+  prof -> team : build SE profile
+  activate team
+  team -> llm : "Build social engineering\nprofile for {name}\nwith {connections}"
+  activate llm
+  llm --> team : SubjectProfile\n(susceptibility scores,\nbehavioral predictions)
+  deactivate llm
+  team --> prof : profile data
+  deactivate team
+  prof -> db : store SubjectProfile
+end
+
+deactivate prof
+
+== 4. Behavioral Simulation ==
+
+sim -> db : get SubjectProfile[]
+activate sim
+
+note right of sim
+  5 Default Scenarios:
+  1. Spear phishing email
+  2. Pretexting phone call
+  3. USB baiting
+  4. LinkedIn SE
+  5. Wire fraud impersonation
+end note
+
+loop for each profile × scenario
+  sim -> sim : Monte Carlo run\n(N iterations)
+  sim -> sim : vary parameters:\n- time_of_day\n- channel\n- pretext_quality\n- urgency_level
+  sim -> team : evaluate scenario outcome
+  activate team
+  team -> llm : "Given profile {profile}\nand scenario {scenario}\nwith params {params},\npredict success/failure"
+  llm --> team : {success, confidence,\nreasoning}
+  deactivate team
+  sim -> sim : aggregate results\n(success_rate, avg_confidence)
+end
+
+sim -> db : store simulation results\nin SubjectProfile
+sim --> prof : simulation summary
+deactivate sim
+
+@enduml
