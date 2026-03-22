@@ -3,11 +3,11 @@
 #  ice9-services — manage ice_9 API and Dashboard services
 # ============================================================
 #  Usage:  ice9-services {start|stop|restart|status|logs|install|uninstall}
+#  Works on Linux (systemd) and macOS (launchd)
 # ============================================================
 
 set -euo pipefail
 
-SERVICES=(ice9-api ice9-dashboard)
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="${REPO_DIR}/deploy"
 
@@ -19,8 +19,27 @@ RST='\033[0m'
 
 header() { echo -e "\n${CYN}━━━ $1 ━━━${RST}"; }
 
-# ── status with color ─────────────────────────────────────────
-do_status() {
+# ── Detect platform ──────────────────────────────────────────
+OS="$(uname -s)"
+case "$OS" in
+    Linux)  PLATFORM="linux" ;;
+    Darwin) PLATFORM="macos" ;;
+    *)      echo -e "${RED}Unsupported OS: $OS${RST}"; exit 1 ;;
+esac
+
+# ── Service identifiers ──────────────────────────────────────
+if [[ "$PLATFORM" == "linux" ]]; then
+    SERVICES=(ice9-api ice9-dashboard)
+else
+    SERVICES=(com.ice9.api com.ice9.dashboard)
+    LAUNCH_DIR="$HOME/Library/LaunchAgents"
+fi
+
+# ════════════════════════════════════════════════════════════════
+#  Linux (systemd) functions
+# ════════════════════════════════════════════════════════════════
+
+linux_status() {
     header "ice_9 Service Status"
     printf "  ${YLW}%-22s %-12s %-10s %s${RST}\n" "SERVICE" "ACTIVE" "ENABLED" "PID"
     echo "  ──────────────────────────────────────────────────────"
@@ -37,21 +56,16 @@ do_status() {
 
         printf "  %-22s ${color}%-12s${RST} %-10s %s\n" "$svc" "$active" "$enabled" "$pid"
     done
-
-    # Show URLs if running
     echo ""
     if systemctl is-active ice9-api &>/dev/null; then
-        local port
-        port=$(systemctl show ice9-api -p ExecStart --value 2>/dev/null | grep -oP 'port \K\d+' || echo "8443")
-        echo -e "  ${GRN}API:${RST}        http://localhost:${port}"
+        echo -e "  ${GRN}API:${RST}        http://localhost:8443"
     fi
     if systemctl is-active ice9-dashboard &>/dev/null; then
         echo -e "  ${GRN}Dashboard:${RST}  http://localhost:3000"
     fi
 }
 
-# ── generic action on services ────────────────────────────────
-do_action() {
+linux_action() {
     local action="$1"
     header "${action^} ice_9 services"
     for svc in "${SERVICES[@]}"; do
@@ -64,9 +78,8 @@ do_action() {
     done
 }
 
-# ── logs ──────────────────────────────────────────────────────
-do_logs() {
-    local svc="${2:-}"
+linux_logs() {
+    local svc="${1:-}"
     if [[ -n "$svc" ]]; then
         header "Logs: $svc"
         journalctl -u "$svc" -f --no-hostname -o short-iso
@@ -76,25 +89,20 @@ do_logs() {
     fi
 }
 
-# ── install ───────────────────────────────────────────────────
-do_install() {
+linux_install() {
     header "Installing ice_9 service files"
-
-    # Check if service files exist in deploy/
     local has_files=false
-    for svc in "${SERVICES[@]}"; do
+    for svc in ice9-api ice9-dashboard; do
         if [[ -f "${DEPLOY_DIR}/${svc}.service" ]]; then
             has_files=true
         fi
     done
-
     if [[ "$has_files" == false ]]; then
         echo -e "  ${YLW}No service files found in ${DEPLOY_DIR}/${RST}"
         echo -e "  Run ${CYN}./install.sh${RST} first to generate them for your environment."
         exit 1
     fi
-
-    for svc in "${SERVICES[@]}"; do
+    for svc in ice9-api ice9-dashboard; do
         local src="${DEPLOY_DIR}/${svc}.service"
         if [[ -f "$src" ]]; then
             sudo cp "$src" "/etc/systemd/system/${svc}.service"
@@ -103,15 +111,13 @@ do_install() {
             echo -e "  ${YLW}!${RST} ${svc}.service not found (skipped)"
         fi
     done
-
     sudo systemctl daemon-reload
-    echo -e "\n${GRN}Daemon reloaded.${RST} Run: ${YLW}ice9-services enable${RST} to auto-start on boot."
+    echo -e "\n${GRN}Daemon reloaded.${RST} Run: ${YLW}./ice9-services enable${RST} to auto-start on boot."
 }
 
-# ── uninstall ─────────────────────────────────────────────────
-do_uninstall() {
+linux_uninstall() {
     header "Uninstalling ice_9 service files"
-    for svc in "${SERVICES[@]}"; do
+    for svc in ice9-api ice9-dashboard; do
         if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
             sudo systemctl stop "$svc" 2>/dev/null || true
             sudo systemctl disable "$svc" 2>/dev/null || true
@@ -125,33 +131,228 @@ do_uninstall() {
     echo -e "\n${GRN}Services removed and daemon reloaded.${RST}"
 }
 
-# ── main ──────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  macOS (launchd) functions
+# ════════════════════════════════════════════════════════════════
+
+macos_status() {
+    header "ice_9 Service Status"
+    printf "  ${YLW}%-26s %-12s %s${RST}\n" "SERVICE" "STATUS" "PID"
+    echo "  ──────────────────────────────────────────────────────"
+
+    local api_running=false
+    local dash_running=false
+
+    for svc in "${SERVICES[@]}"; do
+        local status="not loaded"
+        local pid="-"
+        local color="$RED"
+
+        # Check if loaded
+        if launchctl list "$svc" &>/dev/null; then
+            pid=$(launchctl list "$svc" 2>/dev/null | awk 'NR==2{print $1}' || echo "-")
+            local exit_code=$(launchctl list "$svc" 2>/dev/null | awk 'NR==2{print $2}' || echo "-")
+            if [[ "$pid" != "-" ]] && [[ "$pid" != "0" ]] && [[ "$pid" != "" ]]; then
+                status="running"
+                color="$GRN"
+            elif [[ "$exit_code" == "0" ]]; then
+                status="stopped"
+                color="$YLW"
+            else
+                status="error ($exit_code)"
+                pid="-"
+            fi
+        fi
+
+        local display_name="$svc"
+        [[ "$svc" == "com.ice9.api" ]] && display_name="ice9-api" && [[ "$status" == "running" ]] && api_running=true
+        [[ "$svc" == "com.ice9.dashboard" ]] && display_name="ice9-dashboard" && [[ "$status" == "running" ]] && dash_running=true
+
+        printf "  %-26s ${color}%-12s${RST} %s\n" "$display_name" "$status" "$pid"
+    done
+
+    echo ""
+    if [[ "$api_running" == true ]]; then
+        echo -e "  ${GRN}API:${RST}        http://localhost:8443"
+    fi
+    if [[ "$dash_running" == true ]]; then
+        echo -e "  ${GRN}Dashboard:${RST}  http://localhost:3000"
+    fi
+}
+
+macos_start() {
+    header "Start ice_9 services"
+    for svc in "${SERVICES[@]}"; do
+        local plist="${LAUNCH_DIR}/${svc}.plist"
+        local display_name="${svc/com.ice9./ice9-}"
+        printf "  %-22s " "$display_name"
+        if [[ ! -f "$plist" ]]; then
+            echo -e "${RED}✗${RST} (not installed — run ./ice9-services install)"
+            continue
+        fi
+        if launchctl load "$plist" 2>/dev/null && launchctl start "$svc" 2>/dev/null; then
+            echo -e "${GRN}✓${RST}"
+        else
+            echo -e "${YLW}✓${RST} (already loaded)"
+        fi
+    done
+}
+
+macos_stop() {
+    header "Stop ice_9 services"
+    for svc in "${SERVICES[@]}"; do
+        local plist="${LAUNCH_DIR}/${svc}.plist"
+        local display_name="${svc/com.ice9./ice9-}"
+        printf "  %-22s " "$display_name"
+        launchctl stop "$svc" 2>/dev/null || true
+        launchctl unload "$plist" 2>/dev/null || true
+        echo -e "${GRN}✓${RST}"
+    done
+}
+
+macos_restart() {
+    macos_stop
+    sleep 1
+    macos_start
+}
+
+macos_logs() {
+    local svc="${1:-}"
+    local log_dir="${REPO_DIR}/logs"
+
+    if [[ -n "$svc" ]]; then
+        # Map friendly name to log file
+        local log_file
+        case "$svc" in
+            ice9-api|api)           log_file="${log_dir}/api.log" ;;
+            ice9-dashboard|dashboard) log_file="${log_dir}/dashboard.log" ;;
+            *) log_file="${log_dir}/${svc}.log" ;;
+        esac
+        header "Logs: $svc"
+        if [[ -f "$log_file" ]]; then
+            tail -f "$log_file"
+        else
+            echo -e "  ${YLW}Log file not found:${RST} $log_file"
+            echo -e "  Check ${log_dir}/ for available logs."
+        fi
+    else
+        header "Logs: all ice_9 services"
+        tail -f "${log_dir}/api.log" "${log_dir}/dashboard.log" 2>/dev/null || \
+            echo -e "  ${YLW}No log files found in ${log_dir}/${RST}"
+    fi
+}
+
+macos_install() {
+    header "Installing ice_9 launchd plists"
+    local has_files=false
+    for svc in "${SERVICES[@]}"; do
+        if [[ -f "${DEPLOY_DIR}/${svc}.plist" ]]; then
+            has_files=true
+        fi
+    done
+    if [[ "$has_files" == false ]]; then
+        echo -e "  ${YLW}No plist files found in ${DEPLOY_DIR}/${RST}"
+        echo -e "  Run ${CYN}./install.sh${RST} first to generate them for your environment."
+        exit 1
+    fi
+    mkdir -p "$LAUNCH_DIR"
+    for svc in "${SERVICES[@]}"; do
+        local src="${DEPLOY_DIR}/${svc}.plist"
+        if [[ -f "$src" ]]; then
+            cp "$src" "${LAUNCH_DIR}/"
+            echo -e "  ${GRN}✓${RST} ${svc}.plist → ${LAUNCH_DIR}/"
+        else
+            echo -e "  ${YLW}!${RST} ${svc}.plist not found (skipped)"
+        fi
+    done
+    echo -e "\n${GRN}Plists installed.${RST} Run: ${YLW}./ice9-services start${RST} to start services."
+}
+
+macos_uninstall() {
+    header "Uninstalling ice_9 launchd plists"
+    for svc in "${SERVICES[@]}"; do
+        local plist="${LAUNCH_DIR}/${svc}.plist"
+        if [[ -f "$plist" ]]; then
+            launchctl stop "$svc" 2>/dev/null || true
+            launchctl unload "$plist" 2>/dev/null || true
+            rm "$plist"
+            echo -e "  ${GRN}✓${RST} Removed ${svc}.plist"
+        else
+            echo -e "  ${YLW}!${RST} ${svc}.plist not installed (skipped)"
+        fi
+    done
+    echo -e "\n${GRN}Services removed.${RST}"
+}
+
+macos_enable() {
+    header "Enable ice_9 services (load at login)"
+    for svc in "${SERVICES[@]}"; do
+        local plist="${LAUNCH_DIR}/${svc}.plist"
+        local display_name="${svc/com.ice9./ice9-}"
+        printf "  %-22s " "$display_name"
+        if [[ -f "$plist" ]]; then
+            launchctl load "$plist" 2>/dev/null || true
+            echo -e "${GRN}✓${RST}"
+        else
+            echo -e "${RED}✗${RST} (not installed)"
+        fi
+    done
+}
+
+macos_disable() {
+    header "Disable ice_9 services (unload)"
+    for svc in "${SERVICES[@]}"; do
+        local plist="${LAUNCH_DIR}/${svc}.plist"
+        local display_name="${svc/com.ice9./ice9-}"
+        printf "  %-22s " "$display_name"
+        launchctl unload "$plist" 2>/dev/null || true
+        echo -e "${GRN}✓${RST}"
+    done
+}
+
+# ════════════════════════════════════════════════════════════════
+#  Main — dispatch to platform-specific functions
+# ════════════════════════════════════════════════════════════════
+
+# Extract optional service name for logs
+LOG_SVC="${2:-}"
+
 case "${1:-help}" in
-    install)    do_install ;;
-    uninstall)  do_uninstall ;;
-    start)      do_action start ;;
-    stop)       do_action stop ;;
-    restart)    do_action restart ;;
-    status)     do_status ;;
-    enable)     do_action enable ;;
-    disable)    do_action disable ;;
-    logs)       do_logs "$@" ;;
+    status)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_status; else macos_status; fi ;;
+    start)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_action start; else macos_start; fi ;;
+    stop)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_action stop; else macos_stop; fi ;;
+    restart)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_action restart; else macos_restart; fi ;;
+    enable)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_action enable; else macos_enable; fi ;;
+    disable)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_action disable; else macos_disable; fi ;;
+    logs)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_logs "$LOG_SVC"; else macos_logs "$LOG_SVC"; fi ;;
+    install)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_install; else macos_install; fi ;;
+    uninstall)
+        if [[ "$PLATFORM" == "linux" ]]; then linux_uninstall; else macos_uninstall; fi ;;
     *)
         echo -e "${CYN}ice9-services${RST} — manage ice_9 API and Dashboard"
         echo ""
-        echo "Usage:  ice9-services <command> [service]"
+        echo "Usage:  ./ice9-services <command> [service]"
         echo ""
         echo "Commands:"
-        echo "  install     Copy generated .service files to systemd and reload"
-        echo "  uninstall   Stop, disable, and remove service files from systemd"
+        echo "  install     Install service files (systemd on Linux, launchd on macOS)"
+        echo "  uninstall   Stop and remove service files"
         echo "  start       Start all ice_9 services"
         echo "  stop        Stop all ice_9 services"
         echo "  restart     Restart all ice_9 services"
         echo "  status      Show status of all ice_9 services"
-        echo "  enable      Enable auto-start on boot"
-        echo "  disable     Disable auto-start on boot"
+        echo "  enable      Enable auto-start on boot/login"
+        echo "  disable     Disable auto-start"
         echo "  logs        Tail logs (optionally: logs <service-name>)"
         echo ""
-        echo "Setup:  Run ./install.sh first to generate service files for your environment."
+        echo "Platform:  ${PLATFORM} ($(uname -s))"
+        echo "Setup:     Run ./install.sh first to generate service files for your environment."
         ;;
 esac

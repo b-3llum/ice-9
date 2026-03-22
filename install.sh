@@ -2,7 +2,8 @@
 # ============================================================
 #  ice_9 installer — sets up the full platform from a fresh clone
 # ============================================================
-#  Usage:  ./install.sh [--no-systemd] [--no-dashboard]
+#  Usage:  ./install.sh [--no-services] [--no-dashboard]
+#  Works on Linux (systemd) and macOS (launchd)
 # ============================================================
 
 set -euo pipefail
@@ -19,19 +20,27 @@ warn()    { echo -e "  ${YLW}!${RST} $1"; }
 fail()    { echo -e "  ${RED}✗${RST} $1"; }
 die()     { fail "$1"; exit 1; }
 
+# ── Detect OS ─────────────────────────────────────────────────
+OS="$(uname -s)"
+case "$OS" in
+    Linux)  PLATFORM="linux" ;;
+    Darwin) PLATFORM="macos" ;;
+    *)      die "Unsupported OS: $OS (Linux and macOS only)" ;;
+esac
+
 # ── Parse flags ───────────────────────────────────────────────
-INSTALL_SYSTEMD=true
+INSTALL_SERVICES=true
 INSTALL_DASHBOARD=true
 
 for arg in "$@"; do
     case "$arg" in
-        --no-systemd)   INSTALL_SYSTEMD=false ;;
-        --no-dashboard) INSTALL_DASHBOARD=false ;;
+        --no-services|--no-systemd) INSTALL_SERVICES=false ;;
+        --no-dashboard)             INSTALL_DASHBOARD=false ;;
         --help|-h)
-            echo "Usage: ./install.sh [--no-systemd] [--no-dashboard]"
+            echo "Usage: ./install.sh [--no-services] [--no-dashboard]"
             echo ""
             echo "Options:"
-            echo "  --no-systemd    Skip systemd service installation"
+            echo "  --no-services   Skip service installation (systemd on Linux, launchd on macOS)"
             echo "  --no-dashboard  Skip dashboard (Node.js) setup"
             exit 0
             ;;
@@ -49,12 +58,13 @@ CURRENT_USER="$(whoami)"
 header "ice_9 Installer"
 echo -e "  Repo:      ${CYN}${REPO_DIR}${RST}"
 echo -e "  User:      ${CYN}${CURRENT_USER}${RST}"
+echo -e "  Platform:  ${CYN}${PLATFORM}${RST}"
 
 # ── Check Python ──────────────────────────────────────────────
 header "Checking prerequisites"
 
 PYTHON=""
-for cmd in python3.12 python3.11 python3.10 python3; do
+for cmd in python3.13 python3.12 python3.11 python3.10 python3; do
     if command -v "$cmd" &>/dev/null; then
         PYTHON="$cmd"
         break
@@ -73,17 +83,18 @@ ok "Python ${PY_VERSION} (${PYTHON})"
 
 # ── Check Node.js (for dashboard) ────────────────────────────
 NPX_PATH=""
+NPM_PATH=""
 NODE_BIN_DIR=""
 if [[ "$INSTALL_DASHBOARD" == true ]]; then
-    # Find npx — check common locations
     if command -v npx &>/dev/null; then
         NPX_PATH="$(command -v npx)"
     else
-        # Search nvm, fnm, and common locations
+        # Search nvm, fnm, Homebrew, and common locations
         for candidate in \
             "$HOME/.nvm/versions/node"/*/bin/npx \
             "$HOME/.fnm/node-versions"/*/installation/bin/npx \
             "$HOME/.local/share/nvm"/*/bin/npx \
+            /opt/homebrew/bin/npx \
             /usr/local/bin/npx \
             /usr/bin/npx; do
             if [[ -x "$candidate" ]]; then
@@ -95,12 +106,26 @@ if [[ "$INSTALL_DASHBOARD" == true ]]; then
 
     if [[ -z "$NPX_PATH" ]]; then
         warn "npx not found — dashboard will not be installed"
-        warn "Install Node.js 18+ and re-run, or use --no-dashboard"
+        if [[ "$PLATFORM" == "macos" ]]; then
+            warn "Install Node.js: brew install node"
+        else
+            warn "Install Node.js 18+ and re-run, or use --no-dashboard"
+        fi
         INSTALL_DASHBOARD=false
     else
         NODE_BIN_DIR="$(dirname "$NPX_PATH")"
+        NPM_PATH="${NODE_BIN_DIR}/npm"
         NODE_VERSION=$("${NODE_BIN_DIR}/node" --version 2>/dev/null || echo "unknown")
         ok "Node.js ${NODE_VERSION} (${NODE_BIN_DIR})"
+    fi
+fi
+
+# ── Check Homebrew on macOS ───────────────────────────────────
+if [[ "$PLATFORM" == "macos" ]]; then
+    if command -v brew &>/dev/null; then
+        ok "Homebrew available"
+    else
+        warn "Homebrew not found — install from https://brew.sh for easy tool installation"
     fi
 fi
 
@@ -124,7 +149,6 @@ pip install --upgrade pip -q
 pip install -e "${REPO_DIR}" -q
 ok "ice_9 installed ($(ice9 --help 2>/dev/null | head -1 || echo 'entry point ready'))"
 
-# ── Verify ice9 CLI ───────────────────────────────────────────
 if command -v ice9 &>/dev/null; then
     ok "ice9 CLI available"
 else
@@ -143,31 +167,35 @@ if [[ "$INSTALL_DASHBOARD" == true ]]; then
             ok "node_modules already exists"
         else
             echo -e "  Installing npm dependencies..."
-            PATH="${NODE_BIN_DIR}:$PATH" npm install --silent 2>/dev/null
+            PATH="${NODE_BIN_DIR}:$PATH" "$NPM_PATH" install --silent 2>/dev/null
             ok "npm dependencies installed"
         fi
         cd "$REPO_DIR"
     fi
 fi
 
-# ── Generate and install systemd services ─────────────────────
-if [[ "$INSTALL_SYSTEMD" == true ]]; then
-    header "Generating systemd service files"
+# ── Build extra PATH for services ─────────────────────────────
+build_service_path() {
+    local svc_path="${VENV_DIR}/bin"
+    [[ -d "$HOME/go/bin" ]] && svc_path="${svc_path}:${HOME}/go/bin"
+    [[ -d "$HOME/.local/bin" ]] && svc_path="${svc_path}:${HOME}/.local/bin"
+    if [[ "$PLATFORM" == "macos" ]]; then
+        [[ -d "/opt/homebrew/bin" ]] && svc_path="${svc_path}:/opt/homebrew/bin"
+    fi
+    svc_path="${svc_path}:/usr/local/bin:/usr/bin:/bin"
+    echo "$svc_path"
+}
 
-    # Build extra PATH components
-    EXTRA_PATHS=""
-    # venv bin
-    EXTRA_PATHS="${VENV_DIR}/bin"
-    # Go bin
-    [[ -d "$HOME/go/bin" ]] && EXTRA_PATHS="${EXTRA_PATHS}:${HOME}/go/bin"
-    # local bin
-    [[ -d "$HOME/.local/bin" ]] && EXTRA_PATHS="${EXTRA_PATHS}:${HOME}/.local/bin"
-    # System
-    EXTRA_PATHS="${EXTRA_PATHS}:/usr/local/bin:/usr/bin:/bin"
+# ── Generate and install services ─────────────────────────────
+if [[ "$INSTALL_SERVICES" == true ]]; then
+    EXTRA_PATHS="$(build_service_path)"
 
-    # ── ice9-api.service ──
-    API_SERVICE="${DEPLOY_DIR}/ice9-api.service"
-    cat > "$API_SERVICE" <<UNIT
+    if [[ "$PLATFORM" == "linux" ]]; then
+        # ━━━ Linux: systemd ━━━
+        header "Generating systemd service files"
+
+        API_SERVICE="${DEPLOY_DIR}/ice9-api.service"
+        cat > "$API_SERVICE" <<UNIT
 [Unit]
 Description=ice_9 Red Team Orchestration API
 After=network-online.target ollama.service
@@ -193,13 +221,12 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 UNIT
-    ok "Generated ${API_SERVICE}"
+        ok "Generated ${API_SERVICE}"
 
-    # ── ice9-dashboard.service ──
-    if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -n "$NPX_PATH" ]]; then
-        DASH_SERVICE="${DEPLOY_DIR}/ice9-dashboard.service"
-        DASH_PATH="${NODE_BIN_DIR}:${DASHBOARD_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
-        cat > "$DASH_SERVICE" <<UNIT
+        if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -n "$NPX_PATH" ]]; then
+            DASH_SERVICE="${DEPLOY_DIR}/ice9-dashboard.service"
+            DASH_PATH="${NODE_BIN_DIR}:${DASHBOARD_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
+            cat > "$DASH_SERVICE" <<UNIT
 [Unit]
 Description=ice_9 Dashboard (Vite dev server)
 After=ice9-api.service
@@ -220,38 +247,160 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 UNIT
-        ok "Generated ${DASH_SERVICE}"
-    fi
-
-    # ── Install to systemd ──
-    echo ""
-    echo -e "  ${YLW}Install services to systemd? This requires sudo.${RST}"
-    read -rp "  Install and enable services? [y/N]: " CONFIRM
-    if [[ "${CONFIRM,,}" == "y" ]]; then
-        sudo cp "${DEPLOY_DIR}/ice9-api.service" /etc/systemd/system/
-        ok "Copied ice9-api.service"
-
-        if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -f "${DEPLOY_DIR}/ice9-dashboard.service" ]]; then
-            sudo cp "${DEPLOY_DIR}/ice9-dashboard.service" /etc/systemd/system/
-            ok "Copied ice9-dashboard.service"
+            ok "Generated ${DASH_SERVICE}"
         fi
 
-        sudo systemctl daemon-reload
-        ok "Daemon reloaded"
-
-        sudo systemctl enable --now ice9-api
-        ok "ice9-api enabled and started"
-
-        if [[ "$INSTALL_DASHBOARD" == true ]]; then
-            sudo systemctl enable --now ice9-dashboard
-            ok "ice9-dashboard enabled and started"
-        fi
-    else
         echo ""
-        echo -e "  Skipped. To install manually later:"
-        echo -e "    ${CYN}sudo cp ${DEPLOY_DIR}/ice9-*.service /etc/systemd/system/${RST}"
-        echo -e "    ${CYN}sudo systemctl daemon-reload${RST}"
-        echo -e "    ${CYN}sudo systemctl enable --now ice9-api ice9-dashboard${RST}"
+        echo -e "  ${YLW}Install services to systemd? This requires sudo.${RST}"
+        read -rp "  Install and enable services? [y/N]: " CONFIRM
+        if [[ "${CONFIRM,,}" == "y" ]]; then
+            sudo cp "${DEPLOY_DIR}/ice9-api.service" /etc/systemd/system/
+            ok "Copied ice9-api.service"
+
+            if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -f "${DEPLOY_DIR}/ice9-dashboard.service" ]]; then
+                sudo cp "${DEPLOY_DIR}/ice9-dashboard.service" /etc/systemd/system/
+                ok "Copied ice9-dashboard.service"
+            fi
+
+            sudo systemctl daemon-reload
+            ok "Daemon reloaded"
+
+            sudo systemctl enable --now ice9-api
+            ok "ice9-api enabled and started"
+
+            if [[ "$INSTALL_DASHBOARD" == true ]]; then
+                sudo systemctl enable --now ice9-dashboard
+                ok "ice9-dashboard enabled and started"
+            fi
+        else
+            echo ""
+            echo -e "  Skipped. To install manually later:"
+            echo -e "    ${CYN}sudo cp ${DEPLOY_DIR}/ice9-*.service /etc/systemd/system/${RST}"
+            echo -e "    ${CYN}sudo systemctl daemon-reload${RST}"
+            echo -e "    ${CYN}sudo systemctl enable --now ice9-api ice9-dashboard${RST}"
+        fi
+
+    elif [[ "$PLATFORM" == "macos" ]]; then
+        # ━━━ macOS: launchd ━━━
+        header "Generating launchd plist files"
+
+        PLIST_DIR="${DEPLOY_DIR}"
+        LAUNCH_DIR="$HOME/Library/LaunchAgents"
+        mkdir -p "$LAUNCH_DIR"
+
+        # ── ice9-api plist ──
+        API_PLIST="${PLIST_DIR}/com.ice9.api.plist"
+        cat > "$API_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ice9.api</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${VENV_DIR}/bin/uvicorn</string>
+        <string>ice_9.api:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8443</string>
+        <string>--log-level</string>
+        <string>info</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${REPO_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${EXTRA_PATHS}</string>
+        <key>VIRTUAL_ENV</key>
+        <string>${VENV_DIR}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${REPO_DIR}/logs/api.log</string>
+    <key>StandardErrorPath</key>
+    <string>${REPO_DIR}/logs/api.error.log</string>
+</dict>
+</plist>
+PLIST
+        ok "Generated ${API_PLIST}"
+
+        # ── ice9-dashboard plist ──
+        if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -n "$NPX_PATH" ]]; then
+            DASH_PLIST="${PLIST_DIR}/com.ice9.dashboard.plist"
+            cat > "$DASH_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ice9.dashboard</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${NPX_PATH}</string>
+        <string>vite</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>3000</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${DASHBOARD_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${NODE_BIN_DIR}:${DASHBOARD_DIR}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${REPO_DIR}/logs/dashboard.log</string>
+    <key>StandardErrorPath</key>
+    <string>${REPO_DIR}/logs/dashboard.error.log</string>
+</dict>
+</plist>
+PLIST
+            ok "Generated ${DASH_PLIST}"
+        fi
+
+        # Create logs directory
+        mkdir -p "${REPO_DIR}/logs"
+
+        echo ""
+        echo -e "  ${YLW}Install services to launchd?${RST}"
+        read -rp "  Install and start services? [y/N]: " CONFIRM
+        if [[ "${CONFIRM,,}" == "y" ]]; then
+            cp "${API_PLIST}" "${LAUNCH_DIR}/"
+            launchctl load "${LAUNCH_DIR}/com.ice9.api.plist" 2>/dev/null || true
+            launchctl start com.ice9.api 2>/dev/null || true
+            ok "ice9-api loaded and started"
+
+            if [[ "$INSTALL_DASHBOARD" == true ]] && [[ -f "${DASH_PLIST}" ]]; then
+                cp "${DASH_PLIST}" "${LAUNCH_DIR}/"
+                launchctl load "${LAUNCH_DIR}/com.ice9.dashboard.plist" 2>/dev/null || true
+                launchctl start com.ice9.dashboard 2>/dev/null || true
+                ok "ice9-dashboard loaded and started"
+            fi
+        else
+            echo ""
+            echo -e "  Skipped. To install manually later:"
+            echo -e "    ${CYN}cp ${PLIST_DIR}/com.ice9.*.plist ~/Library/LaunchAgents/${RST}"
+            echo -e "    ${CYN}launchctl load ~/Library/LaunchAgents/com.ice9.api.plist${RST}"
+            echo -e "    ${CYN}launchctl load ~/Library/LaunchAgents/com.ice9.dashboard.plist${RST}"
+        fi
     fi
 fi
 
@@ -259,6 +408,11 @@ fi
 header "Checking offensive tools"
 echo -e "  Run ${CYN}ice9 tool list${RST} to see which tools are installed."
 echo -e "  Missing tools won't break ice_9 — phases will skip unavailable tools."
+if [[ "$PLATFORM" == "macos" ]]; then
+    echo ""
+    echo -e "  ${YLW}macOS note:${RST} Some tools (Responder, netexec) have limited macOS support."
+    echo -e "  For full tool coverage, run ice_9 on a Linux host or VM."
+fi
 
 # ── Summary ───────────────────────────────────────────────────
 header "Installation complete"
@@ -268,7 +422,7 @@ echo -e "  ${GRN}API:${RST}        http://localhost:8443"
 if [[ "$INSTALL_DASHBOARD" == true ]]; then
     echo -e "  ${GRN}Dashboard:${RST}  http://localhost:3000"
 fi
-echo -e "  ${GRN}Services:${RST}   ice9-services status"
+echo -e "  ${GRN}Services:${RST}   ./ice9-services status"
 echo -e "  ${GRN}Tools:${RST}      ice9 tool list"
 echo ""
 echo -e "  ${YLW}Quick start:${RST}"

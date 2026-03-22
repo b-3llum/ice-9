@@ -136,12 +136,13 @@ If you installed the systemd services, the API and dashboard are already running
 - **Node.js 18+** — required for the web dashboard (optional if CLI-only)
 - **Ollama** — default LLM provider (or set API keys for Claude/OpenAI/Groq)
 - **Offensive tools** — install the ones you need (see below)
+- **Supported platforms:** Linux (systemd) and macOS (launchd)
 
 ### Installing Offensive Tools
 
 ice_9 integrates 16 tools. Install the ones relevant to your engagement — missing tools won't break anything, phases will skip unavailable tools.
 
-**System packages (pacman/apt):**
+**System packages:**
 
 ```bash
 # Arch
@@ -149,6 +150,10 @@ sudo pacman -S nmap metasploit
 
 # Debian/Ubuntu
 sudo apt install nmap metasploit-framework
+
+# macOS (Homebrew)
+brew install nmap
+brew install --cask metasploit
 ```
 
 **Go tools:**
@@ -188,10 +193,17 @@ ice9 tool list
 
 All detected tools show as `yes` in the Available column. ice_9 automatically searches your venv, `~/go/bin`, and `~/.local/bin` in addition to the system PATH.
 
+### macOS Notes
+
+The CLI, API, dashboard, and AI agents all work on macOS. Some offensive tools have limited macOS support:
+- **Responder** — requires Linux raw sockets, does not run on macOS
+- **netexec** — limited macOS support
+- For full tool coverage, run ice_9 on a Linux host or VM
+
 ### Installer Options
 
 ```bash
-./install.sh --no-systemd     # skip systemd service setup
+./install.sh --no-services    # skip service setup (systemd/launchd)
 ./install.sh --no-dashboard   # skip Node.js/dashboard setup
 ```
 
@@ -199,7 +211,7 @@ All detected tools show as `yes` in the Available column. ice_9 automatically se
 
 ## Services
 
-ice_9 ships with `ice9-services` to manage the API and dashboard as systemd services.
+ice_9 ships with `ice9-services` to manage the API and dashboard. It auto-detects your platform and uses systemd (Linux) or launchd (macOS).
 
 ```bash
 ./ice9-services status      # show service status and URLs
@@ -208,13 +220,13 @@ ice_9 ships with `ice9-services` to manage the API and dashboard as systemd serv
 ./ice9-services restart     # restart all
 ./ice9-services logs        # tail all logs
 ./ice9-services logs ice9-api   # tail API logs only
-./ice9-services install     # copy service files to systemd
-./ice9-services uninstall   # remove service files from systemd
-./ice9-services enable      # auto-start on boot
+./ice9-services install     # install service files (systemd/launchd)
+./ice9-services uninstall   # remove service files
+./ice9-services enable      # auto-start on boot/login
 ./ice9-services disable     # disable auto-start
 ```
 
-If you skipped systemd during `./install.sh`, you can run the services manually:
+If you skipped services during `./install.sh`, you can run manually:
 
 ```bash
 # Terminal 1 — API
