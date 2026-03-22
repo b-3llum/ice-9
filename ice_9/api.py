@@ -763,6 +763,246 @@ async def api_events_recent(
     return [e.to_dict() for e in events]
 
 
+# --- Intelligence Graph endpoints ---
+
+
+@app.get(
+    "/campaigns/{campaign_id}/graph",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_get_graph(campaign_id: str):
+    """Full entity graph (nodes + edges) for a campaign."""
+    store = get_store()
+    campaign = store.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    entities = store.get_entities(campaign_id)
+    relationships = store.get_relationships(campaign_id)
+    return {
+        "nodes": [_entity_response(e) for e in entities],
+        "edges": [_relationship_response(r) for r in relationships],
+        "node_count": len(entities),
+        "edge_count": len(relationships),
+    }
+
+
+@app.get(
+    "/campaigns/{campaign_id}/graph/entities",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_list_entities(
+    campaign_id: str,
+    entity_type: Optional[str] = None,
+    search: Optional[str] = None,
+    min_confidence: float = 0.0,
+):
+    """List entities with optional filters."""
+    from ice_9.core.intel import EntityType
+
+    store = get_store()
+    et = EntityType(entity_type) if entity_type else None
+    entities = store.get_entities(
+        campaign_id, entity_type=et, search=search, min_confidence=min_confidence
+    )
+    return [_entity_response(e) for e in entities]
+
+
+@app.get(
+    "/campaigns/{campaign_id}/graph/entities/{entity_id}",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_get_entity(campaign_id: str, entity_id: str):
+    """Full entity detail with its relationships."""
+    store = get_store()
+    entity = store.get_entity(entity_id)
+    if not entity or entity.campaign_id != campaign_id:
+        raise HTTPException(404, "Entity not found")
+
+    relationships = store.get_relationships(campaign_id, entity_id=entity_id)
+    return {
+        **_entity_response(entity),
+        "relationships": [_relationship_response(r) for r in relationships],
+    }
+
+
+@app.post(
+    "/campaigns/{campaign_id}/graph/entities/{entity_id}/enrich",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_enrich_entity(campaign_id: str, entity_id: str):
+    """Trigger OSINT enrichment for an entity."""
+    from ice_9.intel.enrichment import EnrichmentEngine
+
+    store = get_store()
+    entity = store.get_entity(entity_id)
+    if not entity or entity.campaign_id != campaign_id:
+        raise HTTPException(404, "Entity not found")
+
+    orchestrator = _build_team_orchestrator()
+    try:
+        engine = EnrichmentEngine(store, orchestrator)
+        updated = engine.enrich(entity)
+        return _entity_response(updated)
+    finally:
+        orchestrator.close()
+
+
+@app.get(
+    "/campaigns/{campaign_id}/graph/relationships",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_list_relationships(
+    campaign_id: str,
+    entity_id: Optional[str] = None,
+    rel_type: Optional[str] = None,
+):
+    """List relationships with optional filters."""
+    from ice_9.core.intel import RelType
+
+    store = get_store()
+    rt = RelType(rel_type) if rel_type else None
+    rels = store.get_relationships(campaign_id, entity_id=entity_id, rel_type=rt)
+    return [_relationship_response(r) for r in rels]
+
+
+# --- Subject Profile endpoints ---
+
+
+@app.get(
+    "/campaigns/{campaign_id}/subjects",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_list_subjects(campaign_id: str):
+    """List all subject profiles for a campaign."""
+    store = get_store()
+    profiles = store.get_subject_profiles(campaign_id)
+    return [_subject_response(p) for p in profiles]
+
+
+@app.get(
+    "/campaigns/{campaign_id}/subjects/{subject_id}",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_get_subject(campaign_id: str, subject_id: str):
+    """Full subject dossier."""
+    store = get_store()
+    profile = store.get_subject_profile(subject_id)
+    if not profile or profile.campaign_id != campaign_id:
+        raise HTTPException(404, "Subject profile not found")
+
+    entity = store.get_entity(profile.entity_id)
+    return {
+        **_subject_response(profile),
+        "entity": _entity_response(entity) if entity else None,
+    }
+
+
+@app.post(
+    "/campaigns/{campaign_id}/subjects/{entity_id}/profile",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_create_subject_profile(campaign_id: str, entity_id: str):
+    """Generate or refresh a subject profile for a person entity."""
+    from ice_9.intel.profiler import SubjectProfiler
+
+    store = get_store()
+    entity = store.get_entity(entity_id)
+    if not entity or entity.campaign_id != campaign_id:
+        raise HTTPException(404, "Entity not found")
+    if entity.entity_type.value != "person":
+        raise HTTPException(400, "Subject profiles require a person entity")
+
+    orchestrator = _build_team_orchestrator()
+    try:
+        profiler = SubjectProfiler(store, orchestrator)
+        profile = profiler.build_profile(entity, campaign_id)
+        return _subject_response(profile)
+    finally:
+        orchestrator.close()
+
+
+class SimulationRequest(BaseModel):
+    num_simulations: int = Field(default=50, ge=1, le=500)
+    scenarios: Optional[list[str]] = None
+
+
+@app.post(
+    "/campaigns/{campaign_id}/subjects/{subject_id}/simulate",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_simulate_subject(
+    campaign_id: str, subject_id: str, body: SimulationRequest
+):
+    """Run behavioral simulation for a subject."""
+    from ice_9.intel.simulation import BehavioralSimulator
+
+    store = get_store()
+    profile = store.get_subject_profile(subject_id)
+    if not profile or profile.campaign_id != campaign_id:
+        raise HTTPException(404, "Subject profile not found")
+
+    entities = store.get_entities(campaign_id)
+    relationships = store.get_relationships(campaign_id)
+
+    orchestrator = _build_team_orchestrator()
+    try:
+        simulator = BehavioralSimulator(orchestrator)
+        result = simulator.simulate(
+            subject=profile,
+            entity_graph=entities,
+            relationships=relationships,
+            scenarios=body.scenarios,
+            num_simulations=body.num_simulations,
+            campaign_id=campaign_id,
+        )
+        # Store results in the subject profile
+        profile.behavioral_predictions.append(result.model_dump(mode="json"))
+        profile.susceptibility_scores = {
+            s.scenario_name: s.success_rate for s in result.scenarios
+        }
+        store.save_subject_profile(profile)
+        return result.model_dump(mode="json")
+    finally:
+        orchestrator.close()
+
+
+# --- Intel extraction endpoint ---
+
+
+@app.post(
+    "/campaigns/{campaign_id}/graph/extract",
+    dependencies=[Depends(verify_api_key)],
+)
+async def api_extract_entities(campaign_id: str):
+    """Reprocess all task outputs to extract entities."""
+    from ice_9.intel.extractor import EntityExtractor
+
+    store = get_store()
+    campaign = store.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    extractor = EntityExtractor(store)
+    total_entities = 0
+    total_rels = 0
+
+    for phase in campaign.phases:
+        for task in phase.tasks:
+            if task.output:
+                parsed = task.params.get("_parsed", {})
+                entities, rels = extractor.extract_and_store(
+                    task.tool, parsed, task.target, campaign_id
+                )
+                total_entities += len(entities)
+                total_rels += len(rels)
+
+    return {
+        "entities_extracted": total_entities,
+        "relationships_extracted": total_rels,
+    }
+
+
 # --- Helpers ---
 
 
@@ -806,3 +1046,52 @@ def _resolve_phase(phase_str: str) -> PhaseType:
     if not result:
         raise HTTPException(400, f"Unknown phase: {phase_str}")
     return result
+
+
+def _entity_response(entity) -> dict:
+    """Format an Entity for API response."""
+    return {
+        "id": entity.id,
+        "entity_type": entity.entity_type.value,
+        "name": entity.name,
+        "properties": entity.properties,
+        "confidence": entity.confidence,
+        "sources": entity.sources,
+        "campaign_id": entity.campaign_id,
+        "created_at": entity.created_at.isoformat(),
+        "updated_at": entity.updated_at.isoformat(),
+    }
+
+
+def _relationship_response(rel) -> dict:
+    """Format a Relationship for API response."""
+    return {
+        "id": rel.id,
+        "source_id": rel.source_id,
+        "target_id": rel.target_id,
+        "rel_type": rel.rel_type.value,
+        "properties": rel.properties,
+        "confidence": rel.confidence,
+        "sources": rel.sources,
+    }
+
+
+def _subject_response(profile) -> dict:
+    """Format a SubjectProfile for API response."""
+    return {
+        "id": profile.id,
+        "entity_id": profile.entity_id,
+        "campaign_id": profile.campaign_id,
+        "emails": profile.emails,
+        "social_accounts": profile.social_accounts,
+        "organizational_role": profile.organizational_role,
+        "department": profile.department,
+        "reporting_chain": profile.reporting_chain,
+        "digital_footprint": profile.digital_footprint,
+        "communication_style": profile.communication_style,
+        "interests": profile.interests,
+        "susceptibility_scores": profile.susceptibility_scores,
+        "recommended_pretexts": profile.recommended_pretexts,
+        "behavioral_predictions": profile.behavioral_predictions,
+        "updated_at": profile.updated_at.isoformat(),
+    }

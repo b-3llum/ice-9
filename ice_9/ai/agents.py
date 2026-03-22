@@ -14,6 +14,7 @@ class AgentRole(str, Enum):
     SOCIAL_ENGINEER = "social_engineer"
     REPORT_WRITER = "report_writer"
     CODE_ANALYST = "code_analyst"
+    INTELLIGENCE_ANALYST = "intelligence_analyst"
 
 
 # Default system prompts for each agent role
@@ -71,6 +72,13 @@ DEFAULT_PROMPTS: dict[AgentRole, str] = {
         "- Check for hardcoded credentials and sensitive data exposure\n"
         "- Suggest secure coding fixes\n"
         "Map findings to CWE IDs and OWASP categories."
+    ),
+    AgentRole.INTELLIGENCE_ANALYST: (
+        "You are an intelligence analyst for a red team engagement.\n"
+        "Given raw OSINT data about a target individual, synthesize it into a structured\n"
+        "intelligence profile. Extract: role, department, communication patterns, interests,\n"
+        "digital hygiene indicators, and social engineering attack surface.\n"
+        "Be precise and cite your sources. Respond in structured JSON when requested."
     ),
 }
 
