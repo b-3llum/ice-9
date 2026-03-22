@@ -52,6 +52,54 @@ graph TD
     Tools --> DB
 ```
 
+### Campaign State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Planning
+    Planning --> Active
+    Planning --> Aborted
+    Active --> Paused
+    Active --> Completed
+    Active --> Aborted
+    Paused --> Active
+    Paused --> Aborted
+    Completed --> [*]
+    Aborted --> [*]
+```
+
+### Phase Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator / AI
+    participant PE as Phase Engine
+    participant TW as Tool Wrapper
+    participant EB as EventBus
+    participant DB as SQLite
+
+    Op->>PE: run(campaign, phase_type)
+    PE->>EB: PHASE_START
+    PE->>PE: plan() → task list
+    PE->>EB: PHASE_PLAN
+
+    loop Each Task
+        PE->>EB: PHASE_TASK_START
+        PE->>TW: run(target, **kwargs)
+        TW->>EB: TOOL_START
+        TW->>TW: subprocess.Popen()
+        TW-->>EB: TOOL_OUTPUT (streaming)
+        TW->>EB: TOOL_COMPLETE
+        PE->>PE: parse_output() → findings
+        PE->>DB: store findings
+        PE->>EB: FINDING_NEW
+        PE->>EB: PHASE_TASK_COMPLETE
+    end
+
+    PE->>DB: complete_phase()
+    PE->>EB: PHASE_COMPLETE
+```
+
 ---
 
 ## Integrated Tools
