@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
@@ -26,6 +25,38 @@ class ImpacketTool(ToolWrapper):
             if resolve_binary(alt):
                 self.binary = alt
 
+    @staticmethod
+    def _build_auth(
+        target: str,
+        *,
+        domain: str = "",
+        username: str = "",
+        password: str = "",
+        nt_hash: str = "",
+        include_target: bool = True,
+    ) -> tuple[str, list[str]]:
+        """Build an Impacket NTLM auth string and optional hash args.
+
+        Returns:
+            A tuple of (auth_string, extra_args) where auth_string is
+            ``[domain/]username[:password][@target]`` and extra_args
+            contains ``["-hashes", ":<hash>"]`` when *nt_hash* is set.
+        """
+        auth = ""
+        if domain:
+            auth += f"{domain}/"
+        auth += username
+        if password:
+            auth += f":{password}"
+        if include_target:
+            auth += f"@{target}"
+
+        extra: list[str] = []
+        if nt_hash:
+            extra.extend(["-hashes", f":{nt_hash}"])
+
+        return auth, extra
+
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         lines = result.stdout.strip().splitlines()
         interesting = [
@@ -47,25 +78,16 @@ class SecretsDump(ImpacketTool):
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         cmd = [self.get_binary_path()]
 
-        domain = kwargs.get("domain", "")
-        username = kwargs.get("username", "")
-        password = kwargs.get("password", "")
-        nt_hash = kwargs.get("nt_hash", "")
-
-        # Build auth string: domain/user:pass@target
-        auth = ""
-        if domain:
-            auth += f"{domain}/"
-        if username:
-            auth += username
-        if password:
-            auth += f":{password}"
-        elif nt_hash:
-            cmd.extend(["-hashes", f":{nt_hash}"])
-        auth += f"@{target}"
+        auth, hash_args = self._build_auth(
+            target,
+            domain=kwargs.get("domain", ""),
+            username=kwargs.get("username", ""),
+            password=kwargs.get("password", ""),
+            nt_hash=kwargs.get("nt_hash", ""),
+        )
         cmd.append(auth)
+        cmd.extend(hash_args)
 
-        # Options
         if kwargs.get("just_dc"):
             cmd.append("-just-dc")
         if kwargs.get("just_dc_ntlm"):
@@ -171,23 +193,20 @@ class GetUserSPNs(ImpacketTool):
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         cmd = [self.get_binary_path()]
 
-        domain = kwargs.get("domain", target)
-        username = kwargs.get("username", "")
-        password = kwargs.get("password", "")
-        nt_hash = kwargs.get("nt_hash", "")
-
-        auth = f"{domain}/{username}"
-        if password:
-            auth += f":{password}"
+        auth, hash_args = self._build_auth(
+            target,
+            domain=kwargs.get("domain", target),
+            username=kwargs.get("username", ""),
+            password=kwargs.get("password", ""),
+            nt_hash=kwargs.get("nt_hash", ""),
+            include_target=False,
+        )
         cmd.append(auth)
-
-        if nt_hash:
-            cmd.extend(["-hashes", f":{nt_hash}"])
+        cmd.extend(hash_args)
 
         dc_ip = kwargs.get("dc_ip", target)
         cmd.extend(["-dc-ip", dc_ip])
 
-        # Request TGS tickets
         if kwargs.get("request", True):
             cmd.append("-request")
 
@@ -222,24 +241,16 @@ class PsExec(ImpacketTool):
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         cmd = [self.get_binary_path()]
 
-        domain = kwargs.get("domain", "")
-        username = kwargs.get("username", "")
-        password = kwargs.get("password", "")
-        nt_hash = kwargs.get("nt_hash", "")
-
-        auth = ""
-        if domain:
-            auth += f"{domain}/"
-        auth += username
-        if password:
-            auth += f":{password}"
-        auth += f"@{target}"
+        auth, hash_args = self._build_auth(
+            target,
+            domain=kwargs.get("domain", ""),
+            username=kwargs.get("username", ""),
+            password=kwargs.get("password", ""),
+            nt_hash=kwargs.get("nt_hash", ""),
+        )
         cmd.append(auth)
+        cmd.extend(hash_args)
 
-        if nt_hash:
-            cmd.extend(["-hashes", f":{nt_hash}"])
-
-        # Command to execute
         exec_cmd = kwargs.get("command")
         if exec_cmd:
             cmd.extend(["-c", exec_cmd])
@@ -258,22 +269,15 @@ class WmiExec(ImpacketTool):
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         cmd = [self.get_binary_path()]
 
-        domain = kwargs.get("domain", "")
-        username = kwargs.get("username", "")
-        password = kwargs.get("password", "")
-        nt_hash = kwargs.get("nt_hash", "")
-
-        auth = ""
-        if domain:
-            auth += f"{domain}/"
-        auth += username
-        if password:
-            auth += f":{password}"
-        auth += f"@{target}"
+        auth, hash_args = self._build_auth(
+            target,
+            domain=kwargs.get("domain", ""),
+            username=kwargs.get("username", ""),
+            password=kwargs.get("password", ""),
+            nt_hash=kwargs.get("nt_hash", ""),
+        )
         cmd.append(auth)
-
-        if nt_hash:
-            cmd.extend(["-hashes", f":{nt_hash}"])
+        cmd.extend(hash_args)
 
         exec_cmd = kwargs.get("command")
         if exec_cmd:
