@@ -1,5 +1,29 @@
 # Daily Changelog
 
+## 2026-03-22 (run 2) — Code Quality: Impacket Auth Deduplication
+
+**Focus:** Category B — Code Quality (impacket_tools.py duplication)
+
+**Changes:**
+
+- `ice_9/tools/impacket_tools.py`: Extracted `ImpacketTool._build_auth()` static method that builds the NTLM auth string (`[domain/]username[:password][@target]`) and optional `-hashes` args. Refactored `SecretsDump`, `GetUserSPNs`, `PsExec`, and `WmiExec` to use it, eliminating ~40 lines of duplicated auth construction logic. Removed unused `json` import. Added `include_target` parameter to support GetUserSPNs which omits `@target` from its auth string.
+- `tests/test_tools/test_impacket_tools.py`: New file — 18 tests covering `_build_auth` helper (full auth, hash-only, password+hash, no domain, no password, include_target=False, empty inputs) and `build_command` for all four refactored classes.
+
+**Behavioral note:** SecretsDump previously used `elif` for hash handling (hash args only added when no password present). The refactored version always passes hash args when `nt_hash` is set, matching PsExec/WmiExec behavior. Impacket itself handles the precedence, so this is a correctness improvement.
+
+**Test results:** 94 passed (up from 76), 0 failures, 101 warnings (all `datetime.utcnow()` deprecation).
+
+**Recommended next run focus:**
+- Category A: Path traversal in `output_file` kwargs across nmap, amass, subfinder, theharvester, bloodhound, impacket_tools — none validate that the path stays within an allowed directory. Add a shared `validate_output_path()` utility in `tools/base.py`.
+- Category A: `metasploit.py:103-104` bare `except Exception: pass` in `_authenticate()`.
+- Category A: `metasploit.py:125` `search_modules` interpolates `query` into URL without encoding.
+- Category B: `GetNPUsers.build_command` has unusual logic (mutates `cmd[-1]` by index) — could be simplified but has a different auth pattern than the other 4 tools.
+
+**Issues noticed but not fixed:**
+- `base.py:121,161` — `datetime.utcnow()` deprecation (101 warnings in test suite)
+- `custom.py` — generic tool runner accepts arbitrary args without validation (lower risk since no `shell=True`)
+- `impacket_tools.py:297` — `NTLMRelayx` uses `target.endswith(".txt")` to decide between `-tf` and `-t`, fragile heuristic
+
 ## 2026-03-22 — Security: Tool Wrapper Input Validation
 
 **Focus:** Category A — Bugs and Security (tool wrappers)
