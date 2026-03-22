@@ -64,6 +64,7 @@ export interface ToolInfo {
   description: string
   binary: string
   available: boolean
+  binary_path: string | null
   att_ck_ids: string[]
 }
 

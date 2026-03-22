@@ -35,12 +35,21 @@ class Settings(BaseModel):
     db_path: Path = Field(default=None)
     evidence_dir: Path = Field(default=None)
     audit_dir: Path = Field(default=None)
+    tool_paths: list[str] = Field(default_factory=list)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     agents: dict[str, AgentConfig] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
+        import os
+
         # Expand ~ in paths (YAML doesn't expand tilde)
         self.data_dir = self.data_dir.expanduser().resolve()
+
+        # Prepend tool_paths to $PATH so shutil.which() finds tool binaries
+        if self.tool_paths:
+            expanded = [str(Path(p).expanduser().resolve()) for p in self.tool_paths]
+            current_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = os.pathsep.join(expanded) + os.pathsep + current_path
         if self.db_path is None:
             self.db_path = self.data_dir / "ice9.db"
         else:

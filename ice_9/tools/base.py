@@ -166,10 +166,12 @@ class ToolWrapper(ABC):
 
     def get_info(self) -> dict[str, Any]:
         """Get tool metadata."""
+        resolved = shutil.which(self.binary)
         return {
             "name": self.name,
             "description": self.description,
             "binary": self.binary,
-            "available": self.is_available(),
+            "available": resolved is not None,
+            "binary_path": resolved,
             "att_ck_ids": self.att_ck_ids,
         }
