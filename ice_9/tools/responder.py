@@ -8,6 +8,12 @@ from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
 
+# Services that Responder supports disabling via --disable-<name> flags
+_VALID_SERVICES = frozenset({
+    "http", "smb", "kerberos", "sql", "ftp", "pop", "smtp",
+    "imap", "ldap", "dns", "dcerpc", "winrm", "nbtns", "llmnr", "mdns",
+})
+
 
 RESPONDER_PATHS = [
     Path("/opt/Responder/Responder.py"),
@@ -76,12 +82,20 @@ class ResponderWrapper(ToolWrapper):
         if kwargs.get("force_wpad_auth"):
             cmd.append("-F")
 
-        # Disable specific services if needed
+        # Disable specific services (e.g. disable="SMB,HTTP")
         disable = kwargs.get("disable")
         if disable:
-            # e.g. disable="SMB,HTTP"
             for svc in disable.split(","):
-                cmd.extend([f"--disable-ess"])
+                svc = svc.strip().lower()
+                if svc not in _VALID_SERVICES:
+                    raise ValueError(
+                        f"Unknown Responder service: {svc!r} — "
+                        f"valid services: {', '.join(sorted(_VALID_SERVICES))}"
+                    )
+                cmd.append(f"--disable-{svc}")
+
+        if kwargs.get("disable_ess"):
+            cmd.append("--disable-ess")
 
         return cmd
 
