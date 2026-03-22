@@ -102,6 +102,279 @@ sequenceDiagram
 
 ---
 
+## Installation
+
+### Quick Start
+
+```bash
+git clone https://github.com/b-3llum/ice-9
+cd ice-9
+./install.sh
+```
+
+The installer will:
+1. Create a Python virtual environment and install ice_9
+2. Install dashboard npm dependencies (if Node.js is available)
+3. Auto-detect your Python, Node.js, Go, and tool paths
+4. Generate systemd service files tailored to your environment
+5. Optionally install and enable the API + dashboard as system services
+
+After installation, the CLI is available immediately:
+
+```bash
+source .venv/bin/activate
+ice9 --help
+```
+
+If you installed the systemd services, the API and dashboard are already running:
+- **API:** http://localhost:8443
+- **Dashboard:** http://localhost:3000
+
+### Prerequisites
+
+- **Python 3.10+** — required
+- **Node.js 18+** — required for the web dashboard (optional if CLI-only)
+- **Ollama** — default LLM provider (or set API keys for Claude/OpenAI/Groq)
+- **Offensive tools** — install the ones you need (see below)
+
+### Installing Offensive Tools
+
+ice_9 integrates 16 tools. Install the ones relevant to your engagement — missing tools won't break anything, phases will skip unavailable tools.
+
+**System packages (pacman/apt):**
+
+```bash
+# Arch
+sudo pacman -S nmap metasploit
+
+# Debian/Ubuntu
+sudo apt install nmap metasploit-framework
+```
+
+**Go tools:**
+
+```bash
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/owasp-amass/amass/v4/...@master
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+```
+
+**pip tools (install into the project venv):**
+
+```bash
+source .venv/bin/activate
+pip install bloodhound impacket
+pip install "theHarvester @ git+https://github.com/laramies/theHarvester.git"
+```
+
+> **Warning:** Do not `pip install Responder` — the PyPI package is a web framework, not the LLMNR poisoner. Clone the real one instead.
+
+**Manual installs:**
+
+```bash
+# netexec (crackmapexec successor)
+# On Arch: yay -S netexec
+# Or: pip install netexec  (requires Python <3.14)
+
+# Responder — clone from GitHub
+sudo git clone https://github.com/lgandx/Responder /opt/Responder
+```
+
+**Verify all tools:**
+
+```bash
+ice9 tool list
+```
+
+All detected tools show as `yes` in the Available column. ice_9 automatically searches your venv, `~/go/bin`, and `~/.local/bin` in addition to the system PATH.
+
+### Installer Options
+
+```bash
+./install.sh --no-systemd     # skip systemd service setup
+./install.sh --no-dashboard   # skip Node.js/dashboard setup
+```
+
+---
+
+## Services
+
+ice_9 ships with `ice9-services` to manage the API and dashboard as systemd services.
+
+```bash
+./ice9-services status      # show service status and URLs
+./ice9-services start       # start API + dashboard
+./ice9-services stop        # stop all
+./ice9-services restart     # restart all
+./ice9-services logs        # tail all logs
+./ice9-services logs ice9-api   # tail API logs only
+./ice9-services install     # copy service files to systemd
+./ice9-services uninstall   # remove service files from systemd
+./ice9-services enable      # auto-start on boot
+./ice9-services disable     # disable auto-start
+```
+
+If you skipped systemd during `./install.sh`, you can run the services manually:
+
+```bash
+# Terminal 1 — API
+source .venv/bin/activate
+uvicorn ice_9.api:app --host 0.0.0.0 --port 8443
+
+# Terminal 2 — Dashboard
+cd dashboard
+npm run dev
+```
+
+---
+
+## Configuration
+
+ice_9 loads configuration from the first file found:
+
+1. `./config/ice9.yaml`
+2. `./ice9.yaml`
+3. `~/.ice9/config.yaml`
+
+```yaml
+# config/ice9.yaml
+data_dir: ~/.ice9
+
+# Extra directories to search for tool binaries
+tool_paths:
+  - ~/.local/bin
+  - /opt/impacket/bin
+
+# LLM providers
+providers:
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "llama3.2:3b"
+  # claude:
+  #   api_key: "${ANTHROPIC_API_KEY}"
+  #   model: "claude-sonnet-4-6-20250514"
+  # openai:
+  #   api_key: "${OPENAI_API_KEY}"
+  #   model: "gpt-4o"
+
+# Agent role assignments
+agents:
+  coordinator:
+    provider: ollama
+    model: "llama3.2:3b"
+  recon_analyst:
+    provider: ollama
+  exploit_researcher:
+    provider: ollama
+  report_writer:
+    provider: ollama
+```
+
+Environment variables are resolved with `${VAR_NAME}` syntax in YAML values.
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `ICE9_API_KEY` | REST API authentication key | none (open) |
+| `ICE9_CORS_ORIGINS` | Allowed CORS origins | `*` |
+| `ICE9_HOME` | Data directory override | `~/.ice9` |
+| `ANTHROPIC_API_KEY` | Claude API key | — |
+| `OPENAI_API_KEY` | OpenAI API key | — |
+| `GROQ_API_KEY` | Groq API key | — |
+
+Create a `.env` file in the project root to set these (loaded automatically by the systemd services).
+
+---
+
+## Usage
+
+### Campaign Lifecycle
+
+```bash
+# Create a campaign with scope targets
+ice9 campaign create -n "Corp Pentest" -s "10.10.10.0/24" "corp.local" --client "ACME Corp" --lead "operator"
+
+# List campaigns
+ice9 campaign list
+
+# Show campaign detail — phases, findings, progress
+ice9 campaign show <id>
+
+# State transitions
+ice9 campaign activate <id>
+ice9 campaign pause <id>
+ice9 campaign resume <id>
+ice9 campaign complete <id>
+ice9 campaign abort <id>
+
+# Delete a campaign (supports short ID prefixes)
+ice9 campaign delete <id>
+```
+
+### Phase Execution
+
+```bash
+# Run a single phase (by name or ATT&CK ID)
+ice9 phase run <id> recon
+ice9 phase run <id> credential_access
+ice9 phase run <id> TA0007
+
+# List phase status
+ice9 phase list <id>
+
+# Skip a phase
+ice9 phase skip <id> resource_dev
+```
+
+### Tool Execution
+
+```bash
+# List all tools and availability
+ice9 tool list
+
+# Run a tool directly against a target
+ice9 tool run nmap --target 10.10.10.0/24 --campaign <id>
+
+# Register a custom tool
+ice9 tool add --name mytool --binary /path/to/tool --desc "description" --attck T1234
+```
+
+### AI Operations
+
+```bash
+# AI engagement plan
+ice9 team plan <id>
+
+# Ask a specific agent
+ice9 team ask "analyze these nmap results" --agent recon_analyst --campaign <id>
+
+# Run full AI team analysis
+ice9 team run <id> --prompt "what attack paths exist?"
+
+# Show agent status
+ice9 team status
+
+# Full autopilot — AI selects and executes up to 5 phases
+ice9 campaign auto <id> --max 5
+```
+
+### Reporting
+
+```bash
+# Generate DOCX penetration test report
+ice9 report generate <id>
+ice9 report generate <id> --output report.docx --ai-summary --ai-narrative
+```
+
+### Audit Log
+
+```bash
+ice9 audit show --limit 50 --campaign <id>
+```
+
+---
+
 ## Integrated Tools
 
     nmap               Network scanner — host discovery, port scanning, service detection
@@ -121,7 +394,7 @@ sequenceDiagram
     subfinder          Passive subdomain discovery via multiple sources
     responder          LLMNR/NBT-NS/MDNS poisoner — capture Net-NTLM hashes
 
-All tools are detected automatically via `$PATH`. Configure additional search paths in `ice9.yaml` with the `tool_paths` directive.
+Tools are detected automatically. ice_9 searches the project venv, `~/go/bin`, `~/.local/bin`, and the system `$PATH`. Additional search paths can be configured with `tool_paths` in `ice9.yaml`.
 
 ---
 
@@ -166,138 +439,6 @@ ice_9 orchestrates a multi-agent AI team. Each agent has a specialised role and 
 
 ---
 
-## Installation
-
-### Prerequisites
-- Python 3.10 or higher
-- Offensive tools installed and accessible via `$PATH`
-- Ollama running locally (default LLM provider), or API keys for cloud providers
-
-### Install
-
-```bash
-git clone https://github.com/b-3llum/ice-9 ~/ice-9
-cd ~/ice-9
-pip install -e .
-```
-
-### Verify
-
-```bash
-ice9 --help
-```
-
----
-
-## Configuration
-
-ice_9 loads configuration from the first file found:
-
-1. `./config/ice9.yaml`
-2. `./ice9.yaml`
-3. `~/.ice9/config.yaml`
-
-```yaml
-# ice9.yaml
-data_dir: ~/.ice9
-
-# Extra directories to search for tool binaries
-tool_paths:
-  - ~/.local/bin
-  - /opt/impacket/bin
-
-# LLM providers
-providers:
-  ollama:
-    base_url: "http://localhost:11434"
-    model: "llama3.2:3b"
-  # claude:
-  #   api_key: "${ANTHROPIC_API_KEY}"
-  #   model: "claude-sonnet-4-6-20250514"
-  # openai:
-  #   api_key: "${OPENAI_API_KEY}"
-  #   model: "gpt-4o"
-
-# Agent role assignments
-agents:
-  coordinator:
-    provider: ollama
-    model: "llama3.2:3b"
-  recon_analyst:
-    provider: ollama
-  exploit_researcher:
-    provider: ollama
-  report_writer:
-    provider: ollama
-```
-
-Environment variables are resolved with `${VAR_NAME}` syntax in YAML values.
-
----
-
-## Usage
-
-### Campaign Lifecycle
-
-```bash
-# Create a campaign with scope targets
-ice9 campaign create -n "Corp Pentest" -s "10.10.10.0/24" "corp.local"
-
-# List campaigns
-ice9 campaign list
-
-# Show campaign detail — phases, findings, progress
-ice9 campaign show <campaign_id>
-
-# Activate, pause, resume, complete, abort
-ice9 campaign activate <id>
-ice9 campaign pause <id>
-ice9 campaign complete <id>
-```
-
-### Phase Execution
-
-```bash
-# Run a single phase (by name or ATT&CK ID)
-ice9 phase run <campaign_id> recon
-ice9 phase run <campaign_id> credential_access
-ice9 phase run <campaign_id> TA0007
-
-# Skip a phase
-ice9 phase skip <campaign_id> resource_dev
-```
-
-### AI Operations
-
-```bash
-# Generate an AI engagement plan
-ice9 campaign show <id>   # AI plan included in output
-
-# Full autopilot — AI selects and executes up to 5 phases
-ice9 campaign auto <id> --max 5
-```
-
-### REST API
-
-```bash
-# Start the API server
-uvicorn ice_9.api:app --host 0.0.0.0 --port 8000
-
-# With API key authentication
-ICE9_API_KEY=your_key uvicorn ice_9.api:app --host 0.0.0.0 --port 8443
-```
-
-### Dashboard
-
-```bash
-cd dashboard
-npm install
-npm run dev          # Dev server → http://localhost:5173
-npm run build        # Production build
-```
-
----
-
 ## Real-Time Events
 
 ice_9 emits structured events for every operation via an in-process event bus. The API exposes these as Server-Sent Events for live dashboard updates.
@@ -332,6 +473,8 @@ curl http://localhost:8443/events/recent?limit=50
 
 ## API Endpoints
 
+All endpoints accept and return JSON. Authenticate with `X-API-Key` header when `ICE9_API_KEY` is set.
+
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check |
@@ -342,7 +485,10 @@ curl http://localhost:8443/events/recent?limit=50
 | DELETE | `/campaigns/{id}` | Delete campaign |
 | POST | `/campaigns/{id}/phases/{phase}/run` | Execute phase (live events) |
 | GET | `/campaigns/{id}/phases/running` | Check running phase |
-| GET | `/campaigns/{id}/findings` | List findings |
+| GET | `/campaigns/{id}/phases/{phase}/tasks` | List phase tasks |
+| GET | `/campaigns/{id}/phases/{phase}/findings` | List phase findings |
+| GET | `/campaigns/{id}/findings` | List all findings |
+| POST | `/campaigns/{id}/findings` | Create finding |
 | POST | `/campaigns/{id}/ai/plan` | AI engagement plan |
 | POST | `/campaigns/{id}/ai/analyze` | Multi-agent analysis |
 | POST | `/campaigns/{id}/ai/ask` | Query specific agent |
@@ -352,6 +498,7 @@ curl http://localhost:8443/events/recent?limit=50
 | GET | `/ai/providers` | List LLM providers |
 | GET | `/events/stream` | SSE event stream |
 | GET | `/events/recent` | Event history buffer |
+| GET | `/audit` | Audit log entries |
 
 ---
 
@@ -359,12 +506,33 @@ curl http://localhost:8443/events/recent?limit=50
 
 ice_9 generates structured DOCX penetration test reports with:
 
-- Executive summary
+- Executive summary (AI-generated)
 - Scope and methodology
 - Findings table with severity breakdown (Critical / High / Medium / Low / Info)
 - Detailed finding descriptions with evidence and remediation
 - ATT&CK technique mapping
 - AI-generated attack narrative
+
+```bash
+ice9 report generate <id> --ai-summary --ai-narrative --output report.docx
+```
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Tools show as MISSING | Install the tool, or add its directory to `tool_paths` in `ice9.yaml`. ice_9 auto-searches venv, `~/go/bin`, `~/.local/bin` |
+| `address already in use` on port 8443 | Kill the old process: `kill $(lsof -ti:8443)` then restart |
+| Dashboard shows stale data | Restart the API: `./ice9-services restart` |
+| `ice9: command not found` | Activate the venv: `source .venv/bin/activate` |
+| systemd service fails | Check logs: `journalctl -u ice9-api -n 30` |
+| npx not found in service | install.sh auto-detects nvm/fnm paths. Re-run `./install.sh` |
+| AI agents return errors | Start Ollama and pull the model: `ollama pull llama3.2:3b` |
+| `pip install Responder` installed wrong package | That's a web framework. Uninstall it. Clone from `github.com/lgandx/Responder` |
+| `pip install theHarvester` gives 0.0.1 | PyPI placeholder. Install from git: `pip install "theHarvester @ git+https://github.com/laramies/theHarvester.git"` |
+| netexec won't build | Python 3.14 incompatible. Install via system package manager |
 
 ---
 
@@ -395,10 +563,10 @@ ice_9/
 │   ├── lateral_movement.py  # TA0008 — Lateral Movement
 │   └── ...                # 13 phase modules total
 ├── tools/
-│   ├── base.py            # ToolWrapper base class — build_command, parse_output, run
+│   ├── base.py            # ToolWrapper + resolve_binary() — smart path detection
 │   ├── nmap.py            # Network scanner integration
 │   ├── kerb_map.py        # kerb-map AD attack surface mapper
-│   ├── impacket.py        # Impacket suite (6 tools)
+│   ├── impacket_tools.py  # Impacket suite (6 tools)
 │   └── ...                # 16 tool wrappers total
 ├── reporting/
 │   └── generator.py       # DOCX report generation
@@ -413,7 +581,20 @@ dashboard/                 # React/TypeScript web UI
 │   ├── hooks/             # useEventStream (SSE), React Query
 │   └── types/             # TypeScript interfaces
 └── vite.config.ts
+
+deploy/                    # Deployment files
+├── gunicorn.conf.py       # Production WSGI config
+└── README.md              # Production deployment guide
+
+install.sh                 # One-command setup script
+ice9-services              # Service management wrapper
 ```
+
+---
+
+## Production Deployment
+
+See [deploy/README.md](deploy/README.md) for production setup with dedicated service users, TLS, and firewall configuration.
 
 ---
 

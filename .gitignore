@@ -8,5 +8,10 @@ build/
 .eggs/
 *.jsonl
 .ice9/
+.claude/
+.env
 
 node_modules/
+
+# Generated reports
+*.docx
