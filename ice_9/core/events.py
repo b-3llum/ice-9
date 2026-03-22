@@ -39,6 +39,14 @@ class EventType(str, Enum):
     # Finding events
     FINDING_NEW = "finding_new"
 
+    # Intelligence events
+    INTEL_ENRICHED = "intel_enriched"
+    SUBJECT_PROFILED = "subject_profiled"
+    SIMULATION_START = "simulation_start"
+    SIMULATION_PROGRESS = "simulation_progress"
+    SIMULATION_COMPLETE = "simulation_complete"
+    ENTITY_EXTRACTED = "entity_extracted"
+
 
 @dataclass
 class Event:

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from ice_9.core.intel import Entity, EntityType, Relationship, RelType, SubjectProfile
 from ice_9.core.models import (
     Campaign,
     CampaignStatus,
@@ -17,7 +18,7 @@ from ice_9.core.models import (
     Task,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -79,6 +80,53 @@ CREATE TABLE IF NOT EXISTS findings (
     FOREIGN KEY (phase_id) REFERENCES phases(id) ON DELETE SET NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    properties TEXT DEFAULT '{}',
+    confidence REAL DEFAULT 0.5,
+    sources TEXT DEFAULT '[]',
+    campaign_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS relationships (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    rel_type TEXT NOT NULL,
+    properties TEXT DEFAULT '{}',
+    confidence REAL DEFAULT 0.5,
+    sources TEXT DEFAULT '[]',
+    campaign_id TEXT NOT NULL,
+    FOREIGN KEY (source_id) REFERENCES entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS subject_profiles (
+    id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    campaign_id TEXT NOT NULL,
+    emails TEXT DEFAULT '[]',
+    social_accounts TEXT DEFAULT '{}',
+    organizational_role TEXT DEFAULT '',
+    department TEXT DEFAULT '',
+    reporting_chain TEXT DEFAULT '[]',
+    digital_footprint TEXT DEFAULT '{}',
+    communication_style TEXT DEFAULT '',
+    interests TEXT DEFAULT '[]',
+    susceptibility_scores TEXT DEFAULT '{}',
+    recommended_pretexts TEXT DEFAULT '[]',
+    behavioral_predictions TEXT DEFAULT '[]',
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+);
 """
 
 
@@ -102,6 +150,10 @@ class Store:
             "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
         ).fetchone()
         if not row:
+            cursor.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+            )
+        elif row["version"] < SCHEMA_VERSION:
             cursor.execute(
                 "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
             )
@@ -390,3 +442,325 @@ class Store:
                 )
             )
         return findings
+
+    # --- Entity CRUD ---
+
+    def save_entity(self, entity: Entity) -> None:
+        """Insert or update an entity."""
+        self.conn.execute(
+            """INSERT INTO entities
+               (id, entity_type, name, properties, confidence, sources, campaign_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 name=excluded.name,
+                 properties=excluded.properties,
+                 confidence=excluded.confidence,
+                 sources=excluded.sources,
+                 updated_at=excluded.updated_at""",
+            (
+                entity.id,
+                entity.entity_type.value,
+                entity.name,
+                json.dumps(entity.properties),
+                entity.confidence,
+                json.dumps(entity.sources),
+                entity.campaign_id,
+                entity.created_at.isoformat(),
+                entity.updated_at.isoformat(),
+            ),
+        )
+        self.conn.commit()
+
+    def save_entities(self, entities: list[Entity]) -> None:
+        """Batch insert or update entities."""
+        c = self.conn.cursor()
+        for entity in entities:
+            c.execute(
+                """INSERT INTO entities
+                   (id, entity_type, name, properties, confidence, sources, campaign_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     name=excluded.name,
+                     properties=excluded.properties,
+                     confidence=excluded.confidence,
+                     sources=excluded.sources,
+                     updated_at=excluded.updated_at""",
+                (
+                    entity.id,
+                    entity.entity_type.value,
+                    entity.name,
+                    json.dumps(entity.properties),
+                    entity.confidence,
+                    json.dumps(entity.sources),
+                    entity.campaign_id,
+                    entity.created_at.isoformat(),
+                    entity.updated_at.isoformat(),
+                ),
+            )
+        self.conn.commit()
+
+    def get_entity(self, entity_id: str) -> Optional[Entity]:
+        """Load an entity by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM entities WHERE id = ?", (entity_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_entity(row)
+
+    def get_entities(
+        self,
+        campaign_id: str,
+        entity_type: Optional[EntityType] = None,
+        search: Optional[str] = None,
+        min_confidence: float = 0.0,
+    ) -> list[Entity]:
+        """List entities for a campaign with optional filters."""
+        query = "SELECT * FROM entities WHERE campaign_id = ?"
+        params: list = [campaign_id]
+
+        if entity_type:
+            query += " AND entity_type = ?"
+            params.append(entity_type.value)
+        if min_confidence > 0.0:
+            query += " AND confidence >= ?"
+            params.append(min_confidence)
+        if search:
+            query += " AND (name LIKE ? OR properties LIKE ?)"
+            pattern = f"%{search}%"
+            params.extend([pattern, pattern])
+
+        query += " ORDER BY updated_at DESC"
+        rows = self.conn.execute(query, params).fetchall()
+        return [self._row_to_entity(r) for r in rows]
+
+    def find_entity(
+        self, campaign_id: str, entity_type: EntityType, name: str
+    ) -> Optional[Entity]:
+        """Find an entity by type and name within a campaign."""
+        row = self.conn.execute(
+            "SELECT * FROM entities WHERE campaign_id = ? AND entity_type = ? AND name = ?",
+            (campaign_id, entity_type.value, name),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_entity(row)
+
+    def delete_entity(self, entity_id: str) -> bool:
+        """Delete an entity and its relationships."""
+        c = self.conn.cursor()
+        c.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        deleted = c.rowcount > 0
+        self.conn.commit()
+        return deleted
+
+    def _row_to_entity(self, row: sqlite3.Row) -> Entity:
+        return Entity(
+            id=row["id"],
+            entity_type=EntityType(row["entity_type"]),
+            name=row["name"],
+            properties=json.loads(row["properties"]),
+            confidence=row["confidence"],
+            sources=json.loads(row["sources"]),
+            campaign_id=row["campaign_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    # --- Relationship CRUD ---
+
+    def save_relationship(self, rel: Relationship) -> None:
+        """Insert or update a relationship."""
+        self.conn.execute(
+            """INSERT INTO relationships
+               (id, source_id, target_id, rel_type, properties, confidence, sources, campaign_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 properties=excluded.properties,
+                 confidence=excluded.confidence,
+                 sources=excluded.sources""",
+            (
+                rel.id,
+                rel.source_id,
+                rel.target_id,
+                rel.rel_type.value,
+                json.dumps(rel.properties),
+                rel.confidence,
+                json.dumps(rel.sources),
+                rel.campaign_id,
+            ),
+        )
+        self.conn.commit()
+
+    def save_relationships(self, rels: list[Relationship]) -> None:
+        """Batch insert or update relationships."""
+        c = self.conn.cursor()
+        for rel in rels:
+            c.execute(
+                """INSERT INTO relationships
+                   (id, source_id, target_id, rel_type, properties, confidence, sources, campaign_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     properties=excluded.properties,
+                     confidence=excluded.confidence,
+                     sources=excluded.sources""",
+                (
+                    rel.id,
+                    rel.source_id,
+                    rel.target_id,
+                    rel.rel_type.value,
+                    json.dumps(rel.properties),
+                    rel.confidence,
+                    json.dumps(rel.sources),
+                    rel.campaign_id,
+                ),
+            )
+        self.conn.commit()
+
+    def get_relationships(
+        self,
+        campaign_id: str,
+        entity_id: Optional[str] = None,
+        rel_type: Optional[RelType] = None,
+    ) -> list[Relationship]:
+        """List relationships for a campaign, optionally filtered by entity or type."""
+        query = "SELECT * FROM relationships WHERE campaign_id = ?"
+        params: list = [campaign_id]
+
+        if entity_id:
+            query += " AND (source_id = ? OR target_id = ?)"
+            params.extend([entity_id, entity_id])
+        if rel_type:
+            query += " AND rel_type = ?"
+            params.append(rel_type.value)
+
+        rows = self.conn.execute(query, params).fetchall()
+        return [self._row_to_relationship(r) for r in rows]
+
+    def find_relationship(
+        self, campaign_id: str, source_id: str, target_id: str, rel_type: RelType
+    ) -> Optional[Relationship]:
+        """Find a specific relationship."""
+        row = self.conn.execute(
+            """SELECT * FROM relationships
+               WHERE campaign_id = ? AND source_id = ? AND target_id = ? AND rel_type = ?""",
+            (campaign_id, source_id, target_id, rel_type.value),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_relationship(row)
+
+    def _row_to_relationship(self, row: sqlite3.Row) -> Relationship:
+        return Relationship(
+            id=row["id"],
+            source_id=row["source_id"],
+            target_id=row["target_id"],
+            rel_type=RelType(row["rel_type"]),
+            properties=json.loads(row["properties"]),
+            confidence=row["confidence"],
+            sources=json.loads(row["sources"]),
+            campaign_id=row["campaign_id"],
+        )
+
+    # --- SubjectProfile CRUD ---
+
+    def save_subject_profile(self, profile: SubjectProfile) -> None:
+        """Insert or update a subject profile."""
+        self.conn.execute(
+            """INSERT INTO subject_profiles
+               (id, entity_id, campaign_id, emails, social_accounts, organizational_role,
+                department, reporting_chain, digital_footprint, communication_style,
+                interests, susceptibility_scores, recommended_pretexts,
+                behavioral_predictions, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 emails=excluded.emails,
+                 social_accounts=excluded.social_accounts,
+                 organizational_role=excluded.organizational_role,
+                 department=excluded.department,
+                 reporting_chain=excluded.reporting_chain,
+                 digital_footprint=excluded.digital_footprint,
+                 communication_style=excluded.communication_style,
+                 interests=excluded.interests,
+                 susceptibility_scores=excluded.susceptibility_scores,
+                 recommended_pretexts=excluded.recommended_pretexts,
+                 behavioral_predictions=excluded.behavioral_predictions,
+                 updated_at=excluded.updated_at""",
+            (
+                profile.id,
+                profile.entity_id,
+                profile.campaign_id,
+                json.dumps(profile.emails),
+                json.dumps(profile.social_accounts),
+                profile.organizational_role,
+                profile.department,
+                json.dumps(profile.reporting_chain),
+                json.dumps(profile.digital_footprint),
+                profile.communication_style,
+                json.dumps(profile.interests),
+                json.dumps(profile.susceptibility_scores),
+                json.dumps(profile.recommended_pretexts),
+                json.dumps(profile.behavioral_predictions),
+                profile.updated_at.isoformat(),
+            ),
+        )
+        self.conn.commit()
+
+    def get_subject_profile(self, profile_id: str) -> Optional[SubjectProfile]:
+        """Load a subject profile by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM subject_profiles WHERE id = ?", (profile_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_subject_profile(row)
+
+    def get_subject_by_entity(
+        self, campaign_id: str, entity_id: str
+    ) -> Optional[SubjectProfile]:
+        """Find a subject profile by its linked entity."""
+        row = self.conn.execute(
+            "SELECT * FROM subject_profiles WHERE campaign_id = ? AND entity_id = ?",
+            (campaign_id, entity_id),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_subject_profile(row)
+
+    def get_subject_profiles(self, campaign_id: str) -> list[SubjectProfile]:
+        """List all subject profiles for a campaign."""
+        rows = self.conn.execute(
+            "SELECT * FROM subject_profiles WHERE campaign_id = ? ORDER BY updated_at DESC",
+            (campaign_id,),
+        ).fetchall()
+        return [self._row_to_subject_profile(r) for r in rows]
+
+    def _row_to_subject_profile(self, row: sqlite3.Row) -> SubjectProfile:
+        return SubjectProfile(
+            id=row["id"],
+            entity_id=row["entity_id"],
+            campaign_id=row["campaign_id"],
+            emails=json.loads(row["emails"]),
+            social_accounts=json.loads(row["social_accounts"]),
+            organizational_role=row["organizational_role"],
+            department=row["department"],
+            reporting_chain=json.loads(row["reporting_chain"]),
+            digital_footprint=json.loads(row["digital_footprint"]),
+            communication_style=row["communication_style"],
+            interests=json.loads(row["interests"]),
+            susceptibility_scores=json.loads(row["susceptibility_scores"]),
+            recommended_pretexts=json.loads(row["recommended_pretexts"]),
+            behavioral_predictions=json.loads(row["behavioral_predictions"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    # --- Graph queries ---
+
+    def get_graph(self, campaign_id: str) -> dict:
+        """Get full entity graph (nodes + edges) for a campaign."""
+        entities = self.get_entities(campaign_id)
+        relationships = self.get_relationships(campaign_id)
+        return {
+            "nodes": entities,
+            "edges": relationships,
+        }
