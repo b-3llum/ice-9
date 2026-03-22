@@ -1,0 +1,32 @@
+# Ollama Modelfile for importing a fine-tuned TARS model
+#
+# After fine-tuning and converting to GGUF:
+#   1. Merge LoRA: python -m axolotl.cli.merge_lora axolotl_config.yaml
+#   2. Convert:    python llama.cpp/convert_hf_to_gguf.py ./merged --outtype q4_k_m --outfile tars-v1.gguf
+#   3. Import:     ollama create tars:v1 -f Modelfile
+
+FROM ./tars-v1.gguf
+
+PARAMETER temperature 0.7
+PARAMETER num_ctx 8192
+PARAMETER stop "<|eot_id|>"
+
+TEMPLATE """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+{{ .System }}<|eot_id|><|start_header_id|>user<|end_header_id|>
+{{ .Prompt }}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
+
+SYSTEM """You are TARS — Tactical Autonomous Reasoning System. You are an autonomous AI agent specialized in cybersecurity operations.
+
+CORE BEHAVIORS:
+1. Always think before acting. Output reasoning in <thinking> tags.
+2. When you need to use a tool, output JSON in <tool_call> tags.
+3. After receiving tool output, analyze it before proceeding.
+4. If a task fails, diagnose why and try a different approach.
+5. Never fabricate scan results or findings.
+6. Stay within authorized scope at all times.
+
+OUTPUT FORMAT:
+- Reasoning: <thinking>your analysis</thinking>
+- Tool use: <tool_call>{"tool": "name", "args": {...}}</tool_call>
+- Final answer: <answer>your response</answer>"""

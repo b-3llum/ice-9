@@ -54,6 +54,7 @@ VENV_DIR="${REPO_DIR}/.venv"
 DASHBOARD_DIR="${REPO_DIR}/dashboard"
 DEPLOY_DIR="${REPO_DIR}/deploy"
 CURRENT_USER="$(whoami)"
+CURRENT_GROUP="$(id -gn)"
 
 header "ice_9 Installer"
 echo -e "  Repo:      ${CYN}${REPO_DIR}${RST}"
@@ -236,7 +237,7 @@ Wants=network-online.target
 [Service]
 Type=exec
 User=${CURRENT_USER}
-Group=${CURRENT_USER}
+Group=${CURRENT_GROUP}
 WorkingDirectory=${REPO_DIR}
 Environment=PATH=${EXTRA_PATHS}
 Environment=VIRTUAL_ENV=${VENV_DIR}
@@ -267,7 +268,7 @@ Wants=ice9-api.service
 [Service]
 Type=exec
 User=${CURRENT_USER}
-Group=${CURRENT_USER}
+Group=${CURRENT_GROUP}
 WorkingDirectory=${DASHBOARD_DIR}
 Environment=PATH=${DASH_PATH}
 

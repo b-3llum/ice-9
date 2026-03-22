@@ -1,0 +1,51 @@
+# TARS fine-tuning configuration for Axolotl
+# Usage: axolotl train axolotl_config.yaml
+
+base_model: meta-llama/Meta-Llama-3.1-8B-Instruct
+model_type: LlamaForCausalLM
+
+# QLoRA settings
+load_in_4bit: true
+adapter: qlora
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Dataset
+datasets:
+  - path: ./datasets/tars_training.jsonl
+    type: sharegpt
+    conversation: chatml
+
+# Training
+sequence_len: 4096
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+num_epochs: 3
+learning_rate: 2e-4
+lr_scheduler: cosine
+warmup_ratio: 0.05
+optimizer: adamw_torch_fused
+
+# Output
+output_dir: ./output/tars-llama3-qlora
+save_strategy: steps
+save_steps: 100
+
+# Performance
+bf16: true
+tf32: true
+gradient_checkpointing: true
+flash_attention: true
+
+# Logging
+logging_steps: 10
+eval_strategy: "no"

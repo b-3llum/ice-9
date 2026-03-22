@@ -20,10 +20,17 @@ dependencies = [
     "aiosqlite>=0.20",
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    "chromadb>=0.5.0",
+    "websockets>=12.0",
 ]
+
+[project.optional-dependencies]
+rag-pdf = ["pymupdf>=1.24.0"]
 
 [project.scripts]
 ice9 = "ice_9.main:app"
+tars = "ice_9.tars.server:main"
+tars-repl = "ice_9.tars.repl:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ice_9"]
