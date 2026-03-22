@@ -179,18 +179,23 @@ def campaign_delete(
     campaign_id: str = typer.Argument(help="Campaign ID"),
 ) -> None:
     """Delete a campaign and all related data."""
-    confirm = typer.confirm("Delete this campaign? This cannot be undone.")
+    store = _get_store()
+    campaign = _resolve_campaign(store, campaign_id)
+    if not campaign:
+        store.close()
+        return
+    confirm = typer.confirm(f"Delete '{campaign.name}'? This cannot be undone.")
     if not confirm:
         print_info("Cancelled.")
+        store.close()
         return
-    store = _get_store()
     audit = _get_audit()
-    deleted = store.delete_campaign(campaign_id)
+    deleted = store.delete_campaign(campaign.id)
     if deleted:
-        audit.log("campaign.delete", campaign_id=campaign_id)
+        audit.log("campaign.delete", campaign_id=campaign.id)
         print_success("Campaign deleted.")
     else:
-        print_error("Campaign not found.")
+        print_error("Failed to delete campaign.")
     store.close()
 
 
