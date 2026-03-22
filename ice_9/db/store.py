@@ -113,12 +113,25 @@ class Store:
     # --- Campaign CRUD ---
 
     def save_campaign(self, campaign: Campaign) -> None:
-        """Insert or replace a campaign and its phases."""
+        """Insert or update a campaign and its phases.
+
+        Uses ON CONFLICT ... DO UPDATE (upsert) instead of INSERT OR REPLACE
+        to avoid DELETE+INSERT cycles that trigger FK cascades (which would
+        destroy task rows and nullify finding phase_ids).
+        """
         c = self.conn.cursor()
         c.execute(
-            """INSERT OR REPLACE INTO campaigns
+            """INSERT INTO campaigns
                (id, name, status, description, client, lead, rules_of_engagement, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 name=excluded.name,
+                 status=excluded.status,
+                 description=excluded.description,
+                 client=excluded.client,
+                 lead=excluded.lead,
+                 rules_of_engagement=excluded.rules_of_engagement,
+                 updated_at=excluded.updated_at""",
             (
                 campaign.id,
                 campaign.name,
@@ -134,9 +147,14 @@ class Store:
         # Upsert phases
         for phase in campaign.phases:
             c.execute(
-                """INSERT OR REPLACE INTO phases
+                """INSERT INTO phases
                    (id, campaign_id, phase_type, status, started_at, completed_at, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     status=excluded.status,
+                     started_at=excluded.started_at,
+                     completed_at=excluded.completed_at,
+                     notes=excluded.notes""",
                 (
                     phase.id,
                     campaign.id,
