@@ -99,3 +99,77 @@ export interface RulesOfEngagement {
   max_severity: Severity
   notes: string
 }
+
+// --- Intelligence Graph types ---
+
+export type EntityType = 'person' | 'host' | 'domain' | 'credential' | 'email' | 'organization' | 'service' | 'network' | 'certificate'
+
+export interface GraphEntity {
+  id: string
+  entity_type: EntityType
+  name: string
+  properties: Record<string, unknown>
+  confidence: number
+  sources: string[]
+  campaign_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface GraphRelationship {
+  id: string
+  source_id: string
+  target_id: string
+  rel_type: string
+  properties: Record<string, unknown>
+  confidence: number
+  sources: string[]
+}
+
+export interface GraphData {
+  nodes: GraphEntity[]
+  edges: GraphRelationship[]
+  node_count: number
+  edge_count: number
+}
+
+export interface SubjectProfile {
+  id: string
+  entity_id: string
+  campaign_id: string
+  emails: string[]
+  social_accounts: Record<string, string>
+  organizational_role: string
+  department: string
+  reporting_chain: string[]
+  digital_footprint: Record<string, unknown>
+  communication_style: string
+  interests: string[]
+  susceptibility_scores: Record<string, number>
+  recommended_pretexts: Array<Record<string, unknown>>
+  behavioral_predictions: Array<Record<string, unknown>>
+  updated_at: string
+}
+
+export interface ScenarioResult {
+  scenario_name: string
+  attack_vector: string
+  pretext: string
+  success_rate: number
+  avg_response_time: string
+  common_failure_modes: string[]
+  sample_interactions: Array<Record<string, unknown>>
+  confidence_interval: [number, number]
+}
+
+export interface SimulationResult {
+  id: string
+  subject_id: string
+  campaign_id: string
+  scenarios: ScenarioResult[]
+  overall_susceptibility: number
+  best_approach: Record<string, unknown>
+  report: string
+  confidence: number
+  simulated_at: string
+}

@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { campaignApi } from '../api/campaigns'
 import { CampaignStatusBadge } from './StatusBadge'
@@ -32,6 +32,12 @@ export default function CampaignDetail() {
         <h1 className="text-2xl font-bold">{campaign.name}</h1>
         <CampaignStatusBadge status={campaign.status} />
         <span className="text-gray-500 text-sm">{campaign.id.slice(0, 8)}</span>
+        <Link
+          to={`/campaigns/${campaign.id}/intel`}
+          className="ml-auto bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm px-4 py-1.5 rounded"
+        >
+          Intel Graph
+        </Link>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
