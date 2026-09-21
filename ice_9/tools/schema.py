@@ -7,7 +7,7 @@ models so they can select and invoke tools in a structured way.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -85,7 +85,7 @@ class ToolSchemaRegistry:
     def register(self, schema: ToolSchema) -> None:
         self._schemas[schema.name] = schema
 
-    def get(self, name: str) -> Optional[ToolSchema]:
+    def get(self, name: str) -> ToolSchema | None:
         return self._schemas.get(name)
 
     def list_schemas(self) -> list[ToolSchema]:

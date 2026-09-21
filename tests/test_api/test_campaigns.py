@@ -24,7 +24,6 @@ def test_create_campaign(api_client):
     assert data["name"] == "API Test"
     assert data["status"] == "planning"
     assert "10.0.0.0/24" in data["scope"]
-    return data["id"]
 
 
 def test_list_campaigns(api_client):
@@ -144,7 +143,6 @@ def test_tools_endpoint(api_client):
 
 def test_api_key_auth(tmp_store, audit_logger):
     """Test that API key auth rejects unauthorized requests."""
-    import os
     from fastapi.testclient import TestClient
     from ice_9 import api
 

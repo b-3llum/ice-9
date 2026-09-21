@@ -103,19 +103,24 @@ def list_tools() -> list[ToolWrapper]:
 
 def register_defaults() -> None:
     """Register all built-in tool wrappers."""
-    from ice_9.tools.nmap import NmapWrapper
-    from ice_9.tools.nuclei import NucleiWrapper
-    from ice_9.tools.kerb_map import KerbMapWrapper
+    from ice_9.tools.amass import AmassWrapper
     from ice_9.tools.bloodhound import BloodHoundWrapper
-    from ice_9.tools.metasploit import MetasploitWrapper
     from ice_9.tools.crackmapexec import CrackMapExecWrapper
     from ice_9.tools.impacket_tools import (
-        SecretsDump, GetNPUsers, GetUserSPNs, PsExec, WmiExec, NTLMRelayx,
+        GetNPUsers,
+        GetUserSPNs,
+        NTLMRelayx,
+        PsExec,
+        SecretsDump,
+        WmiExec,
     )
-    from ice_9.tools.theharvester import TheHarvesterWrapper
-    from ice_9.tools.amass import AmassWrapper
-    from ice_9.tools.subfinder import SubfinderWrapper
+    from ice_9.tools.kerb_map import KerbMapWrapper
+    from ice_9.tools.metasploit import MetasploitWrapper
+    from ice_9.tools.nmap import NmapWrapper
+    from ice_9.tools.nuclei import NucleiWrapper
     from ice_9.tools.responder import ResponderWrapper
+    from ice_9.tools.subfinder import SubfinderWrapper
+    from ice_9.tools.theharvester import TheHarvesterWrapper
 
     register_tool(NmapWrapper())
     register_tool(NucleiWrapper())

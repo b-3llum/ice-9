@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from ice_9.core.models import _new_id
-
 
 # --- Enums ---
 
@@ -58,8 +56,8 @@ class Entity(BaseModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     sources: list[str] = Field(default_factory=list)
     campaign_id: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Relationship(BaseModel):
@@ -95,7 +93,7 @@ class SubjectProfile(BaseModel):
     susceptibility_scores: dict = Field(default_factory=dict)
     recommended_pretexts: list[dict] = Field(default_factory=list)
     behavioral_predictions: list[dict] = Field(default_factory=list)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ScenarioResult(BaseModel):
@@ -122,4 +120,4 @@ class SimulationResult(BaseModel):
     best_approach: dict = Field(default_factory=dict)
     report: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    simulated_at: datetime = Field(default_factory=datetime.utcnow)
+    simulated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

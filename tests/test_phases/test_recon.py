@@ -1,8 +1,7 @@
 """Tests for Reconnaissance phase module."""
 
-from ice_9.core.models import Campaign, PhaseType, Severity
+from ice_9.core.models import PhaseType, Severity
 from ice_9.phases.recon import ReconPhase
-from ice_9.tools.base import ToolResult
 
 
 def test_recon_phase_attributes():

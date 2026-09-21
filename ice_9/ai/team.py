@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timezone
 
 from ice_9.ai.agents import Agent, AgentRegistry, AgentRole
-from ice_9.ai.llm import LLMClient, LLMClientWithFallback, LLMResponse
+from ice_9.ai.llm import LLMClient, LLMClientWithFallback
 from ice_9.ai.providers import Provider, ProviderRegistry
-from ice_9.core.models import Campaign
-from ice_9.core.campaign import get_campaign_progress
 from ice_9.core.audit import AuditLogger
+from ice_9.core.campaign import get_campaign_progress
+from ice_9.core.models import Campaign
 
 
 @dataclass
@@ -44,7 +42,7 @@ class TeamResult:
 
     results: list[AgentResult] = field(default_factory=list)
     synthesis: str = ""  # Coordinator's synthesis of all results
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
     @property
@@ -63,7 +61,7 @@ class TeamOrchestrator:
         self,
         provider_registry: ProviderRegistry,
         agent_registry: AgentRegistry,
-        audit: Optional[AuditLogger] = None,
+        audit: AuditLogger | None = None,
     ) -> None:
         self.providers = provider_registry
         self.agents = agent_registry
@@ -79,7 +77,7 @@ class TeamOrchestrator:
         role: AgentRole | str,
         prompt: str,
         context: str = "",
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> AgentResult:
         """Send a prompt to a specific agent."""
         agent = self.agents.get(role)
@@ -89,8 +87,8 @@ class TeamOrchestrator:
                 content="",
                 model="",
                 provider="",
-                started_at=datetime.utcnow(),
-                completed_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
                 error=f"Agent not found: {role}",
             )
 
@@ -104,7 +102,7 @@ class TeamOrchestrator:
         synthesize: bool = True,
     ) -> TeamResult:
         """Run multiple agents in parallel and optionally synthesize results."""
-        team_result = TeamResult(started_at=datetime.utcnow())
+        team_result = TeamResult(started_at=datetime.now(timezone.utc))
 
         # Determine which agents to run
         target_roles = roles or [
@@ -115,12 +113,19 @@ class TeamOrchestrator:
         ]
         agents_to_run = [a for a in agents_to_run if a and a.enabled]
 
-        # Run agents in parallel using asyncio
-        results = asyncio.get_event_loop().run_until_complete(
-            self._run_parallel(agents_to_run, prompt, context)
-        ) if len(agents_to_run) > 1 else [
-            self._execute_agent(a, prompt, context) for a in agents_to_run
-        ]
+        # Run agents in parallel across threads. A thread pool works whether or
+        # not an asyncio event loop is already running (e.g. inside a FastAPI
+        # request), unlike loop.run_until_complete().
+        if len(agents_to_run) > 1:
+            with ThreadPoolExecutor(max_workers=len(agents_to_run)) as pool:
+                results = list(
+                    pool.map(
+                        lambda a: self._execute_agent(a, prompt, context),
+                        agents_to_run,
+                    )
+                )
+        else:
+            results = [self._execute_agent(a, prompt, context) for a in agents_to_run]
 
         team_result.results = results
 
@@ -129,7 +134,7 @@ class TeamOrchestrator:
             synthesis = self._synthesize(results, prompt, context)
             team_result.synthesis = synthesis
 
-        team_result.completed_at = datetime.utcnow()
+        team_result.completed_at = datetime.now(timezone.utc)
 
         # Audit log
         if self.audit:
@@ -145,33 +150,17 @@ class TeamOrchestrator:
 
         return team_result
 
-    async def _run_parallel(
-        self,
-        agents: list[Agent],
-        prompt: str,
-        context: str,
-    ) -> list[AgentResult]:
-        """Run agents concurrently."""
-        loop = asyncio.get_event_loop()
-        tasks = [
-            loop.run_in_executor(
-                None, self._execute_agent, agent, prompt, context, None
-            )
-            for agent in agents
-        ]
-        return await asyncio.gather(*tasks, return_exceptions=False)
-
     def _execute_agent(
         self,
         agent: Agent,
         prompt: str,
         context: str = "",
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> AgentResult:
         """Execute a single agent."""
-        from ice_9.core.events import event_bus, Event, EventType
+        from ice_9.core.events import Event, EventType, event_bus
 
-        started = datetime.utcnow()
+        started = datetime.now(timezone.utc)
 
         # Build provider fallback chain
         providers: list[Provider] = []
@@ -190,7 +179,7 @@ class TeamOrchestrator:
                 model="",
                 provider="",
                 started_at=started,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 error=f"No providers available for agent {agent.role.value}",
             )
 
@@ -234,7 +223,7 @@ class TeamOrchestrator:
                 model=response.model,
                 provider=response.provider,
                 started_at=started,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 usage=response.usage,
             )
         except Exception as e:
@@ -244,7 +233,7 @@ class TeamOrchestrator:
                 model="",
                 provider="",
                 started_at=started,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 error=str(e),
             )
 

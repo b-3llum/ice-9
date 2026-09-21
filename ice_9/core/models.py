@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
-
 
 # --- Enums ---
 
@@ -90,10 +88,10 @@ class Evidence(BaseModel):
     """A piece of evidence tied to a finding or task."""
 
     id: str = Field(default_factory=_new_id)
-    file_path: Optional[str] = None
+    file_path: str | None = None
     description: str = ""
-    sha256: Optional[str] = None
-    captured_at: datetime = Field(default_factory=datetime.utcnow)
+    sha256: str | None = None
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     content_type: str = "text/plain"
 
 
@@ -105,13 +103,13 @@ class Finding(BaseModel):
     severity: Severity = Severity.INFO
     description: str = ""
     remediation: str = ""
-    cvss: Optional[float] = None
+    cvss: float | None = None
     cve_ids: list[str] = Field(default_factory=list)
     att_ck_ids: list[str] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    phase_id: Optional[str] = None
-    task_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    phase_id: str | None = None
+    task_id: str | None = None
 
 
 class Task(BaseModel):
@@ -122,12 +120,12 @@ class Task(BaseModel):
     target: str = ""
     params: dict = Field(default_factory=dict)
     status: TaskStatus = TaskStatus.QUEUED
-    output: Optional[str] = None
-    att_ck_id: Optional[str] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    phase_id: Optional[str] = None
-    campaign_id: Optional[str] = None
+    output: str | None = None
+    att_ck_id: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    phase_id: str | None = None
+    campaign_id: str | None = None
     findings: list[Finding] = Field(default_factory=list)
 
 
@@ -137,9 +135,9 @@ class Phase(BaseModel):
     id: str = Field(default_factory=_new_id)
     phase_type: PhaseType
     status: PhaseStatus = PhaseStatus.PENDING
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    campaign_id: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    campaign_id: str | None = None
     tasks: list[Task] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     notes: str = ""
@@ -154,7 +152,7 @@ class RulesOfEngagement(BaseModel):
 
     scope: list[str] = Field(default_factory=list)  # IP ranges, domains
     exclusions: list[str] = Field(default_factory=list)
-    testing_window: Optional[str] = None  # e.g. "Mon-Fri 09:00-17:00"
+    testing_window: str | None = None  # e.g. "Mon-Fri 09:00-17:00"
     max_severity: Severity = Severity.CRITICAL
     notes: str = ""
 
@@ -167,8 +165,8 @@ class Campaign(BaseModel):
     status: CampaignStatus = CampaignStatus.PLANNING
     rules_of_engagement: RulesOfEngagement = Field(default_factory=RulesOfEngagement)
     phases: list[Phase] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     description: str = ""
     client: str = ""
     lead: str = ""

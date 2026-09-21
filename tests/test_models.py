@@ -1,17 +1,15 @@
 """Tests for core data models."""
 
+from ice_9.core.campaign import create_campaign
 from ice_9.core.models import (
-    Campaign,
     CampaignStatus,
     Finding,
     Phase,
-    PhaseStatus,
     PhaseType,
     Severity,
     Task,
     TaskStatus,
 )
-from ice_9.core.campaign import create_campaign
 
 
 def test_create_campaign_generates_id():
@@ -57,6 +55,5 @@ def test_phase_name_property():
 
 
 def test_severity_ordering():
-    severities = [Severity.INFO, Severity.CRITICAL, Severity.MEDIUM, Severity.HIGH, Severity.LOW]
     assert Severity.CRITICAL.value == "critical"
     assert Severity.INFO.value == "info"

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ice_9.ai.agents import AgentRole
 from ice_9.ai.team import TeamOrchestrator, TeamResult
 from ice_9.core.models import Campaign, Finding

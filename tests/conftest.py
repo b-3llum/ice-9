@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 from ice_9.core.audit import AuditLogger
 from ice_9.core.campaign import create_campaign
-from ice_9.core.models import Campaign, Finding, Severity
+from ice_9.core.models import Campaign
 from ice_9.db.store import Store
 from ice_9.tools.base import ToolResult
 
@@ -53,7 +52,7 @@ def mock_tool_result():
         parsed: dict[str, Any] | None = None,
         success: bool = True,
     ) -> ToolResult:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         r = ToolResult(
             tool=tool,
             target=target,

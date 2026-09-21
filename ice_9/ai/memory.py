@@ -12,9 +12,8 @@ import json
 import sqlite3
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
-
+from datetime import datetime, timezone
+from typing import Any
 
 # ------------------------------------------------------------------
 # Working Memory
@@ -26,7 +25,7 @@ class MemoryEntry:
 
     role: str  # "user", "assistant", "tool", "system"
     content: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

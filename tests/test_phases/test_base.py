@@ -2,7 +2,6 @@
 
 from ice_9.core.models import PhaseType, Severity
 from ice_9.phases.base import PhaseModule
-from ice_9.tools.base import ToolResult
 
 
 class DummyPhase(PhaseModule):

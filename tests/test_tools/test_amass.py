@@ -1,7 +1,6 @@
 """Tests for Amass tool wrapper."""
 
 import json
-from pathlib import Path
 
 from ice_9.tools.amass import AmassWrapper
 

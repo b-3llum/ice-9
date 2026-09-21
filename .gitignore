@@ -7,14 +7,17 @@ dist/
 build/
 .eggs/
 *.jsonl
+# Keep the fine-tuning dataset that ships with the repo
+!ice_9/finetune/datasets/tars_training.jsonl
 .ice9/
 .claude/
 .env
 
 node_modules/
 
-# Generated reports
+# Generated reports (but keep the committed user manual)
 *.docx
+!ice_9_v0.1_User_Manual.docx
 
 # macOS launchd logs
 logs/

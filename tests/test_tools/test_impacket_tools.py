@@ -1,6 +1,5 @@
 """Tests for Impacket tool wrappers and shared auth builder."""
 
-import pytest
 
 from ice_9.tools.impacket_tools import (
     GetUserSPNs,
@@ -9,7 +8,6 @@ from ice_9.tools.impacket_tools import (
     SecretsDump,
     WmiExec,
 )
-
 
 # ---------------------------------------------------------------------------
 # _build_auth helper

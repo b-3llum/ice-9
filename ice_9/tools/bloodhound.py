@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, Optional
+from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper
-
 
 # Pre-built Cypher queries for common attack path analysis
 CYPHER_QUERIES = {

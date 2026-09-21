@@ -14,8 +14,8 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from ice_9.tars.bootstrap import build_agent
 from ice_9.ai.agent_loop import AgentLoop, TaskResult
+from ice_9.tars.bootstrap import build_agent
 
 app = FastAPI(
     title="TARS Agent Server",

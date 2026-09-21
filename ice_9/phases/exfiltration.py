@@ -78,9 +78,8 @@ class ExfiltrationPhase(PhaseModule):
 
                     # Check for DNS recursion (usable for DNS tunneling)
                     scripts = port_info.get("scripts", {})
-                    if "dns-recursion" in scripts:
-                        if "recursion" in scripts["dns-recursion"].lower():
-                            channels.setdefault("DNS Tunnel", []).append(f"{ip}:53")
+                    if "dns-recursion" in scripts and "recursion" in scripts["dns-recursion"].lower():
+                        channels.setdefault("DNS Tunnel", []).append(f"{ip}:53")
 
         # Generate findings per channel
         for channel, endpoints in channels.items():

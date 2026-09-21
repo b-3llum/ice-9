@@ -14,19 +14,19 @@ if TYPE_CHECKING:
 
 def _load_modules() -> dict[PhaseType, type[PhaseModule]]:
     """Lazy-load all phase module classes."""
-    from ice_9.phases.recon import ReconPhase
-    from ice_9.phases.resource_dev import ResourceDevPhase
-    from ice_9.phases.initial_access import InitialAccessPhase
-    from ice_9.phases.execution import ExecutionPhase
-    from ice_9.phases.persistence import PersistencePhase
-    from ice_9.phases.priv_esc import PrivEscPhase
-    from ice_9.phases.defense_evasion import DefenseEvasionPhase
-    from ice_9.phases.credential_access import CredentialAccessPhase
-    from ice_9.phases.discovery import DiscoveryPhase
-    from ice_9.phases.lateral_movement import LateralMovementPhase
     from ice_9.phases.collection import CollectionPhase
+    from ice_9.phases.credential_access import CredentialAccessPhase
+    from ice_9.phases.defense_evasion import DefenseEvasionPhase
+    from ice_9.phases.discovery import DiscoveryPhase
+    from ice_9.phases.execution import ExecutionPhase
     from ice_9.phases.exfiltration import ExfiltrationPhase
     from ice_9.phases.impact import ImpactPhase
+    from ice_9.phases.initial_access import InitialAccessPhase
+    from ice_9.phases.lateral_movement import LateralMovementPhase
+    from ice_9.phases.persistence import PersistencePhase
+    from ice_9.phases.priv_esc import PrivEscPhase
+    from ice_9.phases.recon import ReconPhase
+    from ice_9.phases.resource_dev import ResourceDevPhase
 
     return {
         PhaseType.RECON: ReconPhase,
@@ -58,7 +58,7 @@ def get_phase_modules() -> dict[PhaseType, type[PhaseModule]]:
 
 
 def get_phase_module(
-    phase_type: PhaseType, store: "Store", audit: "AuditLogger"
+    phase_type: PhaseType, store: Store, audit: AuditLogger
 ) -> PhaseModule:
     """Instantiate a phase module by type."""
     modules = get_phase_modules()

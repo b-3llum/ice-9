@@ -26,6 +26,11 @@ dependencies = [
 
 [project.optional-dependencies]
 rag-pdf = ["pymupdf>=1.24.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
 
 [project.scripts]
 ice9 = "ice_9.main:app"
@@ -34,3 +39,24 @@ tars-repl = "ice_9.tars.repl:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ice_9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["ice_9", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "DTZ", "RUF"]
+ignore = [
+    "E501",    # line length is not enforced (left to the formatter)
+    "B008",    # typer.Option / fastapi.Depends in defaults is the idiomatic pattern
+    "RUF012",  # phase/tool class attributes are overridden constants, not shared mutable state
+    "SIM115",  # temp files are handed to subprocesses and must outlive a context manager
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["RUF059", "RUF015"]  # unpacking/indexing idioms that read clearly in tests

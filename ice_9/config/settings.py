@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -14,8 +14,8 @@ DEFAULT_DATA_DIR = Path.home() / ".ice9"
 class ProviderConfig(BaseModel):
     """LLM provider configuration."""
 
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None
+    base_url: str | None = None
+    api_key: str | None = None
     model: str = ""
     models: list[str] = Field(default_factory=list)
 
@@ -24,7 +24,7 @@ class AgentConfig(BaseModel):
     """AI agent configuration."""
 
     provider: str = "ollama"
-    model: Optional[str] = None
+    model: str | None = None
     system_prompt: str = ""
 
 
@@ -64,7 +64,7 @@ class Settings(BaseModel):
             self.audit_dir = self.audit_dir.expanduser().resolve()
 
 
-def load_settings(config_path: Optional[Path] = None) -> Settings:
+def load_settings(config_path: Path | None = None) -> Settings:
     """Load settings from YAML config file, falling back to defaults."""
     paths_to_try = []
     if config_path:

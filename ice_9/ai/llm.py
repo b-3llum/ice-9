@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -36,7 +36,7 @@ class LLMClient:
         self,
         provider: Provider,
         messages: list[dict[str, str]],
-        model: Optional[str] = None,
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:
@@ -84,8 +84,12 @@ class LLMClient:
 
         response = client.messages.create(**kwargs)
 
+        # The content list can be empty or lead with a non-text block (e.g. on a
+        # max_tokens stop or tool-use response), so guard against IndexError.
+        text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
+
         return LLMResponse(
-            content=response.content[0].text,
+            content=text_blocks[0] if text_blocks else "",
             model=model,
             provider=provider.name,
             usage={
@@ -102,7 +106,7 @@ class LLMClient:
         temperature: float,
     ) -> LLMResponse:
         """Call Ollama API with streaming for real-time token visibility."""
-        from ice_9.core.events import event_bus, Event, EventType
+        from ice_9.core.events import Event, EventType, event_bus
 
         url = f"{provider.base_url}/api/chat"
         payload = {
@@ -213,7 +217,7 @@ class LLMClientWithFallback:
         self,
         providers: list[Provider],
         messages: list[dict[str, str]],
-        model: Optional[str] = None,
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
 
 from ice_9.core.models import (
     Campaign,
@@ -47,7 +46,7 @@ def transition_campaign(campaign: Campaign, target: CampaignStatus) -> Campaign:
     """Transition campaign to a new status."""
     validate_campaign_transition(campaign.status, target)
     campaign.status = target
-    campaign.updated_at = datetime.utcnow()
+    campaign.updated_at = datetime.now(timezone.utc)
     return campaign
 
 
@@ -58,8 +57,8 @@ def start_phase(campaign: Campaign, phase_type: PhaseType) -> Phase:
         raise ValueError(f"Phase {phase_type.value} not found in campaign")
     validate_phase_transition(phase.status, PhaseStatus.IN_PROGRESS)
     phase.status = PhaseStatus.IN_PROGRESS
-    phase.started_at = datetime.utcnow()
-    campaign.updated_at = datetime.utcnow()
+    phase.started_at = datetime.now(timezone.utc)
+    campaign.updated_at = datetime.now(timezone.utc)
     # Auto-activate campaign if still planning
     if campaign.status == CampaignStatus.PLANNING:
         campaign.status = CampaignStatus.ACTIVE
@@ -73,8 +72,8 @@ def complete_phase(campaign: Campaign, phase_type: PhaseType) -> Phase:
         raise ValueError(f"Phase {phase_type.value} not found in campaign")
     validate_phase_transition(phase.status, PhaseStatus.COMPLETED)
     phase.status = PhaseStatus.COMPLETED
-    phase.completed_at = datetime.utcnow()
-    campaign.updated_at = datetime.utcnow()
+    phase.completed_at = datetime.now(timezone.utc)
+    campaign.updated_at = datetime.now(timezone.utc)
     return phase
 
 
@@ -85,7 +84,7 @@ def skip_phase(campaign: Campaign, phase_type: PhaseType) -> Phase:
         raise ValueError(f"Phase {phase_type.value} not found in campaign")
     validate_phase_transition(phase.status, PhaseStatus.SKIPPED)
     phase.status = PhaseStatus.SKIPPED
-    campaign.updated_at = datetime.utcnow()
+    campaign.updated_at = datetime.now(timezone.utc)
     return phase
 
 

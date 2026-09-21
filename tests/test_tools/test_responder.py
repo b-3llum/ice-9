@@ -1,7 +1,6 @@
 """Tests for Responder tool wrapper."""
 
 import pytest
-
 from ice_9.tools.responder import ResponderWrapper
 
 

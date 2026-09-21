@@ -2,7 +2,6 @@
 
 from ice_9.core.campaign import create_campaign
 from ice_9.core.models import (
-    Campaign,
     CampaignStatus,
     Finding,
     PhaseType,
@@ -94,6 +93,63 @@ def test_save_and_load_task(tmp_store):
     assert len(loaded_phase.tasks) == 1
     assert loaded_phase.tasks[0].tool == "nmap"
     assert loaded_phase.tasks[0].status == TaskStatus.COMPLETED
+
+
+def test_get_all_findings_ordered_by_severity(tmp_store):
+    """Findings must come back ordered by risk, not alphabetically by severity text."""
+    c = create_campaign(name="Order Test", scope=[], description="", client="", lead="")
+    tmp_store.save_campaign(c)
+    phase = c.phases[0]
+
+    for sev in [Severity.LOW, Severity.CRITICAL, Severity.INFO, Severity.HIGH, Severity.MEDIUM]:
+        tmp_store.save_finding(
+            Finding(title=f"{sev.value} finding", severity=sev, phase_id=phase.id)
+        )
+
+    findings = tmp_store.get_all_findings(c.id)
+    assert [f.severity for f in findings] == [
+        Severity.CRITICAL,
+        Severity.HIGH,
+        Severity.MEDIUM,
+        Severity.LOW,
+        Severity.INFO,
+    ]
+
+
+def test_resave_task_preserves_finding_link(tmp_store):
+    """Re-saving a task must not null the task_id of findings that reference it.
+
+    Regression: INSERT OR REPLACE deletes the task row (firing the
+    findings.task_id ON DELETE SET NULL cascade) before re-inserting.
+    """
+    c = create_campaign(name="Link Test", scope=[], description="", client="", lead="")
+    tmp_store.save_campaign(c)
+    phase = c.phases[0]
+
+    task = Task(
+        tool="nmap",
+        target="10.0.0.1",
+        status=TaskStatus.COMPLETED,
+        phase_id=phase.id,
+        campaign_id=c.id,
+    )
+    tmp_store.save_task(task)
+
+    finding = Finding(
+        title="Linked finding",
+        severity=Severity.MEDIUM,
+        phase_id=phase.id,
+        task_id=task.id,
+    )
+    tmp_store.save_finding(finding)
+
+    # Re-save the same task (e.g. status update) — the link must survive.
+    task.output = "updated output"
+    tmp_store.save_task(task)
+
+    findings = tmp_store.get_all_findings(c.id)
+    assert len(findings) == 1
+    assert findings[0].task_id == task.id
 
 
 def test_save_and_load_finding(tmp_store):

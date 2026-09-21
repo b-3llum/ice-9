@@ -7,16 +7,14 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from ice_9.core.campaign import get_campaign_progress
 from ice_9.core.models import (
     Campaign,
     CampaignStatus,
     Finding,
-    Phase,
     PhaseStatus,
     Severity,
-    PHASE_NAMES,
 )
-from ice_9.core.campaign import get_campaign_progress
 
 console = Console()
 

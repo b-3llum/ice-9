@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Ice9Event } from '../types/events'
+import { BASE_URL, API_KEY } from '../api/client'
 
 const MAX_EVENTS = 100
 
@@ -11,8 +12,13 @@ export function useEventStream(campaignId?: string) {
   const clearEvents = useCallback(() => setEvents([]), [])
 
   useEffect(() => {
-    const params = campaignId ? `?campaign_id=${campaignId}` : ''
-    const url = `/api/events/stream${params}`
+    // Build from the shared API base (honors VITE_API_URL). EventSource cannot
+    // set headers, so the API key rides along as a query param.
+    const params = new URLSearchParams()
+    if (campaignId) params.set('campaign_id', campaignId)
+    if (API_KEY) params.set('api_key', API_KEY)
+    const qs = params.toString()
+    const url = `${BASE_URL}/events/stream${qs ? `?${qs}` : ''}`
     const es = new EventSource(url)
     esRef.current = es
 

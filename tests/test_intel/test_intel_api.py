@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ice_9.core.intel import Entity, EntityType, Relationship, RelType, SubjectProfile
 
 

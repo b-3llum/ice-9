@@ -75,7 +75,6 @@ class LateralMovementPhase(PhaseModule):
                         continue
 
                     port = port_info.get("port", 0)
-                    service = port_info.get("service", "")
                     scripts = port_info.get("scripts", {})
 
                     # RDP

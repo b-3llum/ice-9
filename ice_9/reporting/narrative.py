@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ice_9.ai.agents import AgentRole
 from ice_9.ai.team import TeamOrchestrator
-from ice_9.core.models import Campaign, Finding, PHASE_NAMES
+from ice_9.core.models import Campaign
 from ice_9.db.store import Store
 
 

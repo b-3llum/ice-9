@@ -187,9 +187,7 @@ class ResponderWrapper(ToolWrapper):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                if "ntlmv2" in name_lower:
-                    if line not in ntlmv2_hashes:
-                        ntlmv2_hashes.append(line)
-                elif "ntlmv1" in name_lower:
-                    if line not in ntlmv1_hashes:
-                        ntlmv1_hashes.append(line)
+                if "ntlmv2" in name_lower and line not in ntlmv2_hashes:
+                    ntlmv2_hashes.append(line)
+                elif "ntlmv1" in name_lower and line not in ntlmv1_hashes:
+                    ntlmv1_hashes.append(line)

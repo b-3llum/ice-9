@@ -13,6 +13,11 @@ export default function AIChat({ campaignId }: { campaignId: string }) {
   const [input, setInput] = useState('')
   const [selectedAgent, setSelectedAgent] = useState('coordinator')
 
+  const appendError = (err: unknown, agent: string) => {
+    const msg = err instanceof Error ? err.message : 'Request failed'
+    setMessages((prev) => [...prev, { role: 'agent', agent, content: `Error: ${msg}` }])
+  }
+
   const askMutation = useMutation({
     mutationFn: (prompt: string) => campaignApi.aiAsk(campaignId, prompt, selectedAgent),
     onSuccess: (result) => {
@@ -25,6 +30,7 @@ export default function AIChat({ campaignId }: { campaignId: string }) {
         },
       ])
     },
+    onError: (err) => appendError(err, selectedAgent),
   })
 
   const planMutation = useMutation({
@@ -35,6 +41,7 @@ export default function AIChat({ campaignId }: { campaignId: string }) {
         { role: 'agent', agent: 'coordinator', content: result.plan },
       ])
     },
+    onError: (err) => appendError(err, 'coordinator'),
   })
 
   const analyzeMutation = useMutation({
@@ -45,6 +52,7 @@ export default function AIChat({ campaignId }: { campaignId: string }) {
         { role: 'agent', agent: 'team', content: result.synthesis || 'No synthesis available.' },
       ])
     },
+    onError: (err) => appendError(err, 'team'),
   })
 
   const handleSubmit = (e: React.FormEvent) => {

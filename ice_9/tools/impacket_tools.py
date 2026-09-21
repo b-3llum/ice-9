@@ -60,9 +60,9 @@ class ImpacketTool(ToolWrapper):
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         lines = result.stdout.strip().splitlines()
         interesting = [
-            l.strip() for l in lines
-            if l.strip() and not l.startswith("Impacket")
-            and not l.startswith("[*] ")
+            line.strip() for line in lines
+            if line.strip() and not line.startswith("Impacket")
+            and not line.startswith("[*] ")
         ]
         return {"results": interesting, "raw_lines": len(lines)}
 
@@ -175,7 +175,7 @@ class GetNPUsers(ImpacketTool):
 
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         lines = result.stdout.strip().splitlines()
-        hashes = [l.strip() for l in lines if "$krb5asrep$" in l]
+        hashes = [line.strip() for line in lines if "$krb5asrep$" in line]
         return {
             "asrep_hashes": hashes,
             "hash_count": len(hashes),
@@ -217,7 +217,7 @@ class GetUserSPNs(ImpacketTool):
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         lines = result.stdout.strip().splitlines()
         spns = []
-        hashes = [l.strip() for l in lines if "$krb5tgs$" in l]
+        hashes = [line.strip() for line in lines if "$krb5tgs$" in line]
 
         for line in lines:
             if "SPN" not in line and "/" in line and "@" not in line:

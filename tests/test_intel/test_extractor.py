@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
+import pytest
 from ice_9.core.campaign import create_campaign
 from ice_9.core.intel import EntityType, RelType
 from ice_9.db.store import Store

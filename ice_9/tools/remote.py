@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -14,7 +13,7 @@ class RemoteHost:
     hostname: str
     user: str = "root"
     port: int = 22
-    key_file: Optional[str] = None
+    key_file: str | None = None
 
 
 @dataclass

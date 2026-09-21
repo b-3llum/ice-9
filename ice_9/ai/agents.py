@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class AgentRole(str, Enum):
@@ -89,7 +89,7 @@ class Agent:
 
     role: AgentRole
     provider_name: str  # Name in ProviderRegistry
-    model: Optional[str] = None  # Override provider default
+    model: str | None = None  # Override provider default
     system_prompt: str = ""
     fallback_providers: list[str] = field(default_factory=list)
     temperature: float = 0.7
@@ -131,7 +131,7 @@ class AgentRegistry:
     def register(self, agent: Agent) -> None:
         self._agents[agent.role] = agent
 
-    def get(self, role: AgentRole | str) -> Optional[Agent]:
+    def get(self, role: AgentRole | str) -> Agent | None:
         if isinstance(role, str):
             try:
                 role = AgentRole(role)

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 from ice_9.core.events import Event, EventType, event_bus
 from ice_9.db.store import Store
-
 
 _registered = False
 _lock = threading.Lock()
