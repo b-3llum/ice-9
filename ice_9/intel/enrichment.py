@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
+from ice_9.ai.json_utils import extract_json
 from ice_9.ai.team import TeamOrchestrator
 from ice_9.core.events import Event, EventType, event_bus
 from ice_9.core.intel import Entity, EntityType, Relationship, RelType
@@ -182,13 +183,9 @@ class EnrichmentEngine:
 
     def _apply_ai_analysis(self, entity: Entity, ai_response: str) -> None:
         """Parse AI analysis response and update entity properties."""
-        try:
-            # Try to extract JSON from the response
-            start = ai_response.find("{")
-            end = ai_response.rfind("}") + 1
-            if start >= 0 and end > start:
-                data = json.loads(ai_response[start:end])
-                entity.properties["ai_profile"] = data
-                entity.confidence = min(entity.confidence + 0.15, 1.0)
-        except (json.JSONDecodeError, ValueError):
+        data = extract_json(ai_response)
+        if data is not None:
+            entity.properties["ai_profile"] = data
+            entity.confidence = min(entity.confidence + 0.15, 1.0)
+        else:
             entity.properties["ai_analysis_raw"] = ai_response[:500]
