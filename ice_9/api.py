@@ -62,6 +62,15 @@ def get_settings():
     global _settings
     if _settings is None:
         _settings = load_settings()
+        # Configure the tool execution backend (local, or SSH to a remote host).
+        from ice_9.tools.execution import ExecutionBackend, set_backend
+        ec = _settings.execution
+        set_backend(
+            ExecutionBackend(
+                backend=ec.backend, host=ec.host, user=ec.user,
+                port=ec.port, key_file=ec.key_file,
+            )
+        )
     return _settings
 
 

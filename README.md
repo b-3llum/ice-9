@@ -163,6 +163,23 @@ ice_9 invokes `claude --print` headlessly per request; the CLI must be on `PATH`
 
 Set these in a `.env` file in the project root (loaded automatically by the services).
 
+### Running tools on a remote host (AWS/EC2)
+
+By default tools run locally. Set an `ssh` execution backend to run every campaign tool on a remote host you control — e.g. an AWS EC2 attack box — so scans originate from that instance's IP and use the tooling installed there:
+
+```yaml
+execution:
+  backend: ssh
+  host: 1.2.3.4
+  user: kali
+  port: 22
+  key_file: ~/.ssh/ice9.pem
+```
+
+ice_9 then wraps each tool as `ssh user@host '<tool …>'` (streaming and events are unchanged). You provision and manage the instance; it must have the offensive tools installed and be reachable over SSH with the given key.
+
+> **Note:** tools that parse **stdout** (subfinder, theHarvester, nuclei, the impacket suite, crackmapexec, responder) work fully over SSH. Two tools (**nmap**, **amass**) write to a local temp file they parse afterward, so over SSH the raw output is still captured but their *structured* parsing isn't populated until the artifact is fetched back — a planned follow-up.
+
 ---
 
 ## Usage

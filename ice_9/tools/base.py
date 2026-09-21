@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ice_9.tools.execution import get_backend
+
 
 def _extra_search_paths() -> list[str]:
     """Build extra PATH entries: venv bin, ~/go/bin, ~/.local/bin."""
@@ -89,7 +91,14 @@ class ToolWrapper(ABC):
         self._binary_path: str | None = None
 
     def is_available(self) -> bool:
-        """Check if the tool binary is installed and accessible."""
+        """Check if the tool binary is installed and accessible.
+
+        With a remote (SSH) execution backend the tools live on the remote
+        host, so local resolution doesn't apply — assume available and let a
+        missing binary surface as a failed run.
+        """
+        if get_backend().is_remote:
+            return True
         return resolve_binary(self.binary) is not None
 
     def get_binary_path(self) -> str:
@@ -120,20 +129,32 @@ class ToolWrapper(ABC):
         cmd = self.build_command(target, **kwargs)
         started = datetime.now(timezone.utc)
 
+        # Wrap for the active backend (unchanged locally; ssh-wrapped when the
+        # campaign runs on a remote host). Events still show the tool command.
+        backend = get_backend()
+        exec_cmd = backend.wrap(cmd)
+
         event_bus.emit(Event(
             type=EventType.TOOL_START,
-            data={"tool": self.name, "target": target, "command": " ".join(cmd)},
+            data={
+                "tool": self.name,
+                "target": target,
+                "command": " ".join(cmd),
+                "host": backend.describe(),
+            },
         ))
 
-        # Ensure venv/go/local bins are visible to subprocesses
+        # Ensure venv/go/local bins are visible to subprocesses (local only;
+        # remote execution relies on the remote host's own PATH).
         env = os.environ.copy()
-        extra = _extra_search_paths()
-        if extra:
-            env["PATH"] = os.pathsep.join(extra) + os.pathsep + env.get("PATH", "")
+        if not backend.is_remote:
+            extra = _extra_search_paths()
+            if extra:
+                env["PATH"] = os.pathsep.join(extra) + os.pathsep + env.get("PATH", "")
 
         try:
             proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                exec_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 env=env,
             )
 
