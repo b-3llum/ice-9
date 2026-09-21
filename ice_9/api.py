@@ -69,7 +69,9 @@ def get_store():
     global _store
     if _store is None:
         settings = get_settings()
-        _store = Store(settings.db_path)
+        # check_same_thread=False so blocking endpoints offloaded to a worker
+        # thread can share this connection (SQLite is in serialized mode).
+        _store = Store(settings.db_path, check_same_thread=False)
         # Enable automatic entity extraction on phase completion (idempotent).
         from ice_9.intel.hooks import register_intel_hooks
         register_intel_hooks(settings.db_path)
@@ -553,17 +555,20 @@ def _build_team_orchestrator():
 async def api_ai_plan(campaign_id: str):
     from ice_9.ai.planner import generate_engagement_plan
 
-    store = get_store()
-    campaign = store.get_campaign(campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+    def _impl():
+        store = get_store()
+        campaign = store.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        plan = generate_engagement_plan(orchestrator, campaign)
-        return {"plan": plan}
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            return {"plan": generate_engagement_plan(orchestrator, campaign)}
+        finally:
+            orchestrator.close()
+
+    # Offload the blocking LLM round-trip so it never stalls the event loop.
+    return await asyncio.to_thread(_impl)
 
 
 @app.post(
@@ -573,29 +578,32 @@ async def api_ai_plan(campaign_id: str):
 async def api_ai_analyze(campaign_id: str):
     from ice_9.ai.analyzer import analyze_findings
 
-    store = get_store()
-    campaign = store.get_campaign(campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+    def _impl():
+        store = get_store()
+        campaign = store.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        team_result = analyze_findings(orchestrator, campaign, store)
-        return {
-            "results": [
-                {
-                    "agent": r.agent_role,
-                    "content": r.content,
-                    "model": r.model,
-                    "provider": r.provider,
-                    "success": r.success,
-                }
-                for r in team_result.results
-            ],
-            "synthesis": team_result.synthesis,
-        }
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            team_result = analyze_findings(orchestrator, campaign, store)
+            return {
+                "results": [
+                    {
+                        "agent": r.agent_role,
+                        "content": r.content,
+                        "model": r.model,
+                        "provider": r.provider,
+                        "success": r.success,
+                    }
+                    for r in team_result.results
+                ],
+                "synthesis": team_result.synthesis,
+            }
+        finally:
+            orchestrator.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 @app.post(
@@ -603,25 +611,28 @@ async def api_ai_analyze(campaign_id: str):
     dependencies=[Depends(verify_api_key)],
 )
 async def api_ai_ask(campaign_id: str, body: AIAskRequest):
-    store = get_store()
-    campaign = store.get_campaign(campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+    def _impl():
+        store = get_store()
+        campaign = store.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        context = orchestrator.get_campaign_context(campaign)
-        result = orchestrator.ask_agent(body.agent, body.prompt, context=context)
-        return {
-            "agent": result.agent_role,
-            "content": result.content,
-            "model": result.model,
-            "provider": result.provider,
-            "success": result.success,
-            "error": result.error,
-        }
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            context = orchestrator.get_campaign_context(campaign)
+            result = orchestrator.ask_agent(body.agent, body.prompt, context=context)
+            return {
+                "agent": result.agent_role,
+                "content": result.content,
+                "model": result.model,
+                "provider": result.provider,
+                "success": result.success,
+                "error": result.error,
+            }
+        finally:
+            orchestrator.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 @app.post(
@@ -631,26 +642,29 @@ async def api_ai_ask(campaign_id: str, body: AIAskRequest):
 async def api_ai_auto(campaign_id: str, body: AIAutoRequest):
     from ice_9.ai.orchestrator import CampaignOrchestrator
 
-    store = get_store()
-    audit = get_audit()
-    campaign = store.get_campaign(campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+    def _impl():
+        store = get_store()
+        audit = get_audit()
+        campaign = store.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
 
-    team = _build_team_orchestrator()
-    try:
-        auto = CampaignOrchestrator(team, store, audit)
-        result = auto.auto_run(campaign, max_phases=body.max_phases)
-        return {
-            "phases_executed": result.phases_executed,
-            "phases_skipped": result.phases_skipped,
-            "total_findings": result.total_findings,
-            "ai_plan": result.ai_plan[:5000],
-            "ai_synthesis": result.ai_synthesis[:5000],
-            "stopped_reason": result.stopped_reason,
-        }
-    finally:
-        team.close()
+        team = _build_team_orchestrator()
+        try:
+            auto = CampaignOrchestrator(team, store, audit)
+            result = auto.auto_run(campaign, max_phases=body.max_phases)
+            return {
+                "phases_executed": result.phases_executed,
+                "phases_skipped": result.phases_skipped,
+                "total_findings": result.total_findings,
+                "ai_plan": result.ai_plan[:5000],
+                "ai_synthesis": result.ai_synthesis[:5000],
+                "stopped_reason": result.stopped_reason,
+            }
+        finally:
+            team.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 @app.get("/ai/agents", dependencies=[Depends(verify_api_key)])
@@ -848,18 +862,20 @@ async def api_enrich_entity(campaign_id: str, entity_id: str):
     """Trigger OSINT enrichment for an entity."""
     from ice_9.intel.enrichment import EnrichmentEngine
 
-    store = get_store()
-    entity = store.get_entity(entity_id)
-    if not entity or entity.campaign_id != campaign_id:
-        raise HTTPException(404, "Entity not found")
+    def _impl():
+        store = get_store()
+        entity = store.get_entity(entity_id)
+        if not entity or entity.campaign_id != campaign_id:
+            raise HTTPException(404, "Entity not found")
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        engine = EnrichmentEngine(store, orchestrator)
-        updated = engine.enrich(entity)
-        return _entity_response(updated)
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            engine = EnrichmentEngine(store, orchestrator)
+            return _entity_response(engine.enrich(entity))
+        finally:
+            orchestrator.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 @app.get(
@@ -920,20 +936,22 @@ async def api_create_subject_profile(campaign_id: str, entity_id: str):
     """Generate or refresh a subject profile for a person entity."""
     from ice_9.intel.profiler import SubjectProfiler
 
-    store = get_store()
-    entity = store.get_entity(entity_id)
-    if not entity or entity.campaign_id != campaign_id:
-        raise HTTPException(404, "Entity not found")
-    if entity.entity_type.value != "person":
-        raise HTTPException(400, "Subject profiles require a person entity")
+    def _impl():
+        store = get_store()
+        entity = store.get_entity(entity_id)
+        if not entity or entity.campaign_id != campaign_id:
+            raise HTTPException(404, "Entity not found")
+        if entity.entity_type.value != "person":
+            raise HTTPException(400, "Subject profiles require a person entity")
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        profiler = SubjectProfiler(store, orchestrator)
-        profile = profiler.build_profile(entity, campaign_id)
-        return _subject_response(profile)
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            profiler = SubjectProfiler(store, orchestrator)
+            return _subject_response(profiler.build_profile(entity, campaign_id))
+        finally:
+            orchestrator.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 class SimulationRequest(BaseModel):
@@ -951,34 +969,37 @@ async def api_simulate_subject(
     """Run behavioral simulation for a subject."""
     from ice_9.intel.simulation import BehavioralSimulator
 
-    store = get_store()
-    profile = store.get_subject_profile(subject_id)
-    if not profile or profile.campaign_id != campaign_id:
-        raise HTTPException(404, "Subject profile not found")
+    def _impl():
+        store = get_store()
+        profile = store.get_subject_profile(subject_id)
+        if not profile or profile.campaign_id != campaign_id:
+            raise HTTPException(404, "Subject profile not found")
 
-    entities = store.get_entities(campaign_id)
-    relationships = store.get_relationships(campaign_id)
+        entities = store.get_entities(campaign_id)
+        relationships = store.get_relationships(campaign_id)
 
-    orchestrator = _build_team_orchestrator()
-    try:
-        simulator = BehavioralSimulator(orchestrator)
-        result = simulator.simulate(
-            subject=profile,
-            entity_graph=entities,
-            relationships=relationships,
-            scenarios=body.scenarios,
-            num_simulations=body.num_simulations,
-            campaign_id=campaign_id,
-        )
-        # Store results in the subject profile
-        profile.behavioral_predictions.append(result.model_dump(mode="json"))
-        profile.susceptibility_scores = {
-            s.scenario_name: s.success_rate for s in result.scenarios
-        }
-        store.save_subject_profile(profile)
-        return result.model_dump(mode="json")
-    finally:
-        orchestrator.close()
+        orchestrator = _build_team_orchestrator()
+        try:
+            simulator = BehavioralSimulator(orchestrator)
+            result = simulator.simulate(
+                subject=profile,
+                entity_graph=entities,
+                relationships=relationships,
+                scenarios=body.scenarios,
+                num_simulations=body.num_simulations,
+                campaign_id=campaign_id,
+            )
+            # Store results in the subject profile
+            profile.behavioral_predictions.append(result.model_dump(mode="json"))
+            profile.susceptibility_scores = {
+                s.scenario_name: s.success_rate for s in result.scenarios
+            }
+            store.save_subject_profile(profile)
+            return result.model_dump(mode="json")
+        finally:
+            orchestrator.close()
+
+    return await asyncio.to_thread(_impl)
 
 
 # --- Intel extraction endpoint ---

@@ -116,6 +116,43 @@ def test_get_all_findings_ordered_by_severity(tmp_store):
     ]
 
 
+def test_get_campaign_uses_bounded_queries(tmp_store):
+    """Hydration must not issue a query per phase (N+1).
+
+    A campaign has 13 phases; the old code ran ~2 queries per phase. Batch
+    loading keeps it to a small constant regardless of phase count.
+    """
+    c = create_campaign(name="Nplus1", scope=[], description="", client="", lead="")
+    tmp_store.save_campaign(c)
+    # Put a task and a finding in a couple of phases.
+    for phase in c.phases[:3]:
+        tmp_store.save_task(
+            Task(tool="nmap", target="10.0.0.1", status=TaskStatus.COMPLETED,
+                 phase_id=phase.id, campaign_id=c.id)
+        )
+        tmp_store.save_finding(
+            Finding(title="f", severity=Severity.LOW, phase_id=phase.id)
+        )
+
+    count = 0
+
+    def tracer(_sql):
+        nonlocal count
+        count += 1
+
+    tmp_store.conn.set_trace_callback(tracer)
+    try:
+        loaded = tmp_store.get_campaign(c.id)
+    finally:
+        tmp_store.conn.set_trace_callback(None)
+
+    assert len(loaded.phases) == 13
+    assert sum(len(p.tasks) for p in loaded.phases) == 3
+    assert sum(len(p.findings) for p in loaded.phases) == 3
+    # campaign + phases + tasks + findings — a small constant, not ~28.
+    assert count <= 5, f"expected bounded query count, got {count}"
+
+
 def test_resave_task_preserves_finding_link(tmp_store):
     """Re-saving a task must not null the task_id of findings that reference it.
 
