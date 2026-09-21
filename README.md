@@ -178,7 +178,7 @@ execution:
 
 ice_9 then wraps each tool as `ssh user@host '<tool …>'` (streaming and events are unchanged). You provision and manage the instance; it must have the offensive tools installed and be reachable over SSH with the given key.
 
-> **Note:** tools that parse **stdout** (subfinder, theHarvester, nuclei, the impacket suite, crackmapexec, responder) work fully over SSH. Two tools (**nmap**, **amass**) write to a local temp file they parse afterward, so over SSH the raw output is still captured but their *structured* parsing isn't populated until the artifact is fetched back — a planned follow-up.
+> **Note:** every integrated tool streams its output to stdout (nmap via `-oX -`, amass via `-json /dev/stdout`, the rest natively), so structured parsing works the same locally and over SSH — no artifacts are left on the remote host.
 
 ---
 
