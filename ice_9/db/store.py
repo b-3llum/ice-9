@@ -322,7 +322,7 @@ class Store:
                 task.campaign_id,
                 task.tool,
                 task.target,
-                json.dumps(task.params),
+                json.dumps(task.params, default=str),
                 task.status.value,
                 task.output,
                 task.att_ck_id,
