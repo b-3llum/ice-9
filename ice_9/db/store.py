@@ -267,13 +267,29 @@ class Store:
     def _get_phases(self, campaign_id: str) -> list[Phase]:
         from ice_9.core.models import PhaseStatus, PhaseType
 
-        rows = self.conn.execute(
+        phase_rows = self.conn.execute(
             "SELECT * FROM phases WHERE campaign_id = ?", (campaign_id,)
         ).fetchall()
+
+        # Batch-load every task and finding for the campaign in two queries and
+        # group them by phase, instead of two queries per phase (N+1).
+        tasks_by_phase: dict[str, list[Task]] = {}
+        for r in self.conn.execute(
+            "SELECT * FROM tasks WHERE campaign_id = ?", (campaign_id,)
+        ).fetchall():
+            tasks_by_phase.setdefault(r["phase_id"], []).append(self._row_to_task(r))
+
+        findings_by_phase: dict[str, list[Finding]] = {}
+        for r in self.conn.execute(
+            """SELECT f.* FROM findings f
+               JOIN phases p ON f.phase_id = p.id
+               WHERE p.campaign_id = ?""",
+            (campaign_id,),
+        ).fetchall():
+            findings_by_phase.setdefault(r["phase_id"], []).append(self._row_to_finding(r))
+
         phases = []
-        for r in rows:
-            tasks = self._get_tasks(phase_id=r["id"])
-            findings = self._get_findings(phase_id=r["id"])
+        for r in phase_rows:
             phases.append(
                 Phase(
                     id=r["id"],
@@ -290,8 +306,8 @@ class Store:
                         else None
                     ),
                     campaign_id=campaign_id,
-                    tasks=tasks,
-                    findings=findings,
+                    tasks=tasks_by_phase.get(r["id"], []),
+                    findings=findings_by_phase.get(r["id"], []),
                     notes=r["notes"] or "",
                 )
             )
@@ -332,36 +348,26 @@ class Store:
         )
         self.conn.commit()
 
-    def _get_tasks(self, phase_id: str) -> list[Task]:
+    def _row_to_task(self, r: sqlite3.Row) -> Task:
         from ice_9.core.models import TaskStatus
 
-        rows = self.conn.execute(
-            "SELECT * FROM tasks WHERE phase_id = ?", (phase_id,)
-        ).fetchall()
-        return [
-            Task(
-                id=r["id"],
-                tool=r["tool"],
-                target=r["target"],
-                params=json.loads(r["params"]),
-                status=TaskStatus(r["status"]),
-                output=r["output"],
-                att_ck_id=r["att_ck_id"],
-                phase_id=r["phase_id"],
-                campaign_id=r["campaign_id"],
-                started_at=(
-                    datetime.fromisoformat(r["started_at"])
-                    if r["started_at"]
-                    else None
-                ),
-                completed_at=(
-                    datetime.fromisoformat(r["completed_at"])
-                    if r["completed_at"]
-                    else None
-                ),
-            )
-            for r in rows
-        ]
+        return Task(
+            id=r["id"],
+            tool=r["tool"],
+            target=r["target"],
+            params=json.loads(r["params"]),
+            status=TaskStatus(r["status"]),
+            output=r["output"],
+            att_ck_id=r["att_ck_id"],
+            phase_id=r["phase_id"],
+            campaign_id=r["campaign_id"],
+            started_at=(
+                datetime.fromisoformat(r["started_at"]) if r["started_at"] else None
+            ),
+            completed_at=(
+                datetime.fromisoformat(r["completed_at"]) if r["completed_at"] else None
+            ),
+        )
 
     # --- Finding CRUD ---
 
@@ -399,38 +405,27 @@ class Store:
         )
         self.conn.commit()
 
-    def _get_findings(self, phase_id: str) -> list[Finding]:
+    def _row_to_finding(self, r: sqlite3.Row) -> Finding:
         from ice_9.core.models import Evidence
 
-        rows = self.conn.execute(
-            "SELECT * FROM findings WHERE phase_id = ?", (phase_id,)
-        ).fetchall()
-        findings = []
-        for r in rows:
-            evidence_data = json.loads(r["evidence"]) if r["evidence"] else []
-            evidence = [Evidence.model_validate(e) for e in evidence_data]
-            findings.append(
-                Finding(
-                    id=r["id"],
-                    title=r["title"],
-                    severity=Severity(r["severity"]),
-                    description=r["description"],
-                    remediation=r["remediation"],
-                    cvss=r["cvss"],
-                    cve_ids=json.loads(r["cve_ids"]) if r["cve_ids"] else [],
-                    att_ck_ids=json.loads(r["att_ck_ids"]) if r["att_ck_ids"] else [],
-                    evidence=evidence,
-                    created_at=datetime.fromisoformat(r["created_at"]),
-                    phase_id=r["phase_id"],
-                    task_id=r["task_id"],
-                )
-            )
-        return findings
+        evidence_data = json.loads(r["evidence"]) if r["evidence"] else []
+        return Finding(
+            id=r["id"],
+            title=r["title"],
+            severity=Severity(r["severity"]),
+            description=r["description"],
+            remediation=r["remediation"],
+            cvss=r["cvss"],
+            cve_ids=json.loads(r["cve_ids"]) if r["cve_ids"] else [],
+            att_ck_ids=json.loads(r["att_ck_ids"]) if r["att_ck_ids"] else [],
+            evidence=[Evidence.model_validate(e) for e in evidence_data],
+            created_at=datetime.fromisoformat(r["created_at"]),
+            phase_id=r["phase_id"],
+            task_id=r["task_id"],
+        )
 
     def get_all_findings(self, campaign_id: str) -> list[Finding]:
-        """Get all findings for a campaign across all phases."""
-        from ice_9.core.models import Evidence
-
+        """Get all findings for a campaign across all phases, ordered by risk."""
         rows = self.conn.execute(
             """SELECT f.* FROM findings f
                JOIN phases p ON f.phase_id = p.id
@@ -444,27 +439,7 @@ class Store:
                         END, f.created_at""",
             (campaign_id,),
         ).fetchall()
-        findings = []
-        for r in rows:
-            evidence_data = json.loads(r["evidence"]) if r["evidence"] else []
-            evidence = [Evidence.model_validate(e) for e in evidence_data]
-            findings.append(
-                Finding(
-                    id=r["id"],
-                    title=r["title"],
-                    severity=Severity(r["severity"]),
-                    description=r["description"],
-                    remediation=r["remediation"],
-                    cvss=r["cvss"],
-                    cve_ids=json.loads(r["cve_ids"]) if r["cve_ids"] else [],
-                    att_ck_ids=json.loads(r["att_ck_ids"]) if r["att_ck_ids"] else [],
-                    evidence=evidence,
-                    created_at=datetime.fromisoformat(r["created_at"]),
-                    phase_id=r["phase_id"],
-                    task_id=r["task_id"],
-                )
-            )
-        return findings
+        return [self._row_to_finding(r) for r in rows]
 
     # --- Entity CRUD ---
 
