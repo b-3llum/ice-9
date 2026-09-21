@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import shutil
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def _extra_search_paths() -> list[str]:
@@ -37,7 +37,7 @@ def _extra_search_paths() -> list[str]:
     return extra
 
 
-def resolve_binary(name: str) -> Optional[str]:
+def resolve_binary(name: str) -> str | None:
     """Find a binary on PATH + venv/go/local bin dirs."""
     # Standard PATH first
     found = shutil.which(name)
@@ -86,7 +86,7 @@ class ToolWrapper(ABC):
     att_ck_ids: list[str] = []  # Default ATT&CK techniques this tool maps to
 
     def __init__(self) -> None:
-        self._binary_path: Optional[str] = None
+        self._binary_path: str | None = None
 
     def is_available(self) -> bool:
         """Check if the tool binary is installed and accessible."""
@@ -115,10 +115,10 @@ class ToolWrapper(ABC):
         **kwargs: Any,
     ) -> ToolResult:
         """Execute the tool and return structured results."""
-        from ice_9.core.events import event_bus, Event, EventType
+        from ice_9.core.events import Event, EventType, event_bus
 
         cmd = self.build_command(target, **kwargs)
-        started = datetime.utcnow()
+        started = datetime.now(timezone.utc)
 
         event_bus.emit(Event(
             type=EventType.TOOL_START,
@@ -158,7 +158,7 @@ class ToolWrapper(ABC):
 
             stderr_output = proc.stderr.read()
             proc.wait(timeout=timeout)
-            completed = datetime.utcnow()
+            completed = datetime.now(timezone.utc)
 
             result = ToolResult(
                 tool=self.name,
@@ -172,7 +172,7 @@ class ToolWrapper(ABC):
             )
         except subprocess.TimeoutExpired:
             proc.kill()
-            completed = datetime.utcnow()
+            completed = datetime.now(timezone.utc)
             result = ToolResult(
                 tool=self.name,
                 target=target,
@@ -184,7 +184,7 @@ class ToolWrapper(ABC):
                 completed_at=completed,
             )
         except FileNotFoundError:
-            completed = datetime.utcnow()
+            completed = datetime.now(timezone.utc)
             result = ToolResult(
                 tool=self.name,
                 target=target,

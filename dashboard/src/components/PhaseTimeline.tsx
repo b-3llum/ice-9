@@ -44,6 +44,8 @@ export default function PhaseTimeline({ phases, campaignId }: Props) {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to start phase'
       alert(msg)
+    } finally {
+      // Always clear, so the other phases' Run buttons re-enable even on success.
       setRunningPhase(null)
     }
   }

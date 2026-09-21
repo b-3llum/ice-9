@@ -6,7 +6,6 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from ice_9.core.intel import Entity, EntityType, Relationship, RelType, SubjectProfile
 from ice_9.core.models import (
@@ -149,11 +148,7 @@ class Store:
         row = cursor.execute(
             "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
         ).fetchone()
-        if not row:
-            cursor.execute(
-                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
-            )
-        elif row["version"] < SCHEMA_VERSION:
+        if not row or row["version"] < SCHEMA_VERSION:
             cursor.execute(
                 "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
             )
@@ -219,7 +214,7 @@ class Store:
             )
         self.conn.commit()
 
-    def get_campaign(self, campaign_id: str) -> Optional[Campaign]:
+    def get_campaign(self, campaign_id: str) -> Campaign | None:
         """Load a campaign by ID with its phases."""
         row = self.conn.execute(
             "SELECT * FROM campaigns WHERE id = ?", (campaign_id,)
@@ -229,7 +224,7 @@ class Store:
         return self._row_to_campaign(row)
 
     def list_campaigns(
-        self, status: Optional[CampaignStatus] = None
+        self, status: CampaignStatus | None = None
     ) -> list[Campaign]:
         """List all campaigns, optionally filtered by status."""
         if status:
@@ -307,9 +302,20 @@ class Store:
     def save_task(self, task: Task) -> None:
         """Insert or replace a task."""
         self.conn.execute(
-            """INSERT OR REPLACE INTO tasks
+            """INSERT INTO tasks
                (id, phase_id, campaign_id, tool, target, params, status, output, att_ck_id, started_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 phase_id=excluded.phase_id,
+                 campaign_id=excluded.campaign_id,
+                 tool=excluded.tool,
+                 target=excluded.target,
+                 params=excluded.params,
+                 status=excluded.status,
+                 output=excluded.output,
+                 att_ck_id=excluded.att_ck_id,
+                 started_at=excluded.started_at,
+                 completed_at=excluded.completed_at""",
             (
                 task.id,
                 task.phase_id,
@@ -360,11 +366,22 @@ class Store:
     # --- Finding CRUD ---
 
     def save_finding(self, finding: Finding) -> None:
-        """Insert or replace a finding."""
+        """Insert or update a finding (upsert, to avoid FK-cascade side effects)."""
         self.conn.execute(
-            """INSERT OR REPLACE INTO findings
+            """INSERT INTO findings
                (id, title, severity, description, remediation, cvss, cve_ids, att_ck_ids, evidence, created_at, phase_id, task_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 title=excluded.title,
+                 severity=excluded.severity,
+                 description=excluded.description,
+                 remediation=excluded.remediation,
+                 cvss=excluded.cvss,
+                 cve_ids=excluded.cve_ids,
+                 att_ck_ids=excluded.att_ck_ids,
+                 evidence=excluded.evidence,
+                 phase_id=excluded.phase_id,
+                 task_id=excluded.task_id""",
             (
                 finding.id,
                 finding.title,
@@ -418,7 +435,13 @@ class Store:
             """SELECT f.* FROM findings f
                JOIN phases p ON f.phase_id = p.id
                WHERE p.campaign_id = ?
-               ORDER BY f.severity, f.created_at""",
+               ORDER BY CASE f.severity
+                          WHEN 'critical' THEN 0
+                          WHEN 'high' THEN 1
+                          WHEN 'medium' THEN 2
+                          WHEN 'low' THEN 3
+                          ELSE 4
+                        END, f.created_at""",
             (campaign_id,),
         ).fetchall()
         findings = []
@@ -499,7 +522,7 @@ class Store:
             )
         self.conn.commit()
 
-    def get_entity(self, entity_id: str) -> Optional[Entity]:
+    def get_entity(self, entity_id: str) -> Entity | None:
         """Load an entity by ID."""
         row = self.conn.execute(
             "SELECT * FROM entities WHERE id = ?", (entity_id,)
@@ -511,8 +534,8 @@ class Store:
     def get_entities(
         self,
         campaign_id: str,
-        entity_type: Optional[EntityType] = None,
-        search: Optional[str] = None,
+        entity_type: EntityType | None = None,
+        search: str | None = None,
         min_confidence: float = 0.0,
     ) -> list[Entity]:
         """List entities for a campaign with optional filters."""
@@ -536,7 +559,7 @@ class Store:
 
     def find_entity(
         self, campaign_id: str, entity_type: EntityType, name: str
-    ) -> Optional[Entity]:
+    ) -> Entity | None:
         """Find an entity by type and name within a campaign."""
         row = self.conn.execute(
             "SELECT * FROM entities WHERE campaign_id = ? AND entity_type = ? AND name = ?",
@@ -620,8 +643,8 @@ class Store:
     def get_relationships(
         self,
         campaign_id: str,
-        entity_id: Optional[str] = None,
-        rel_type: Optional[RelType] = None,
+        entity_id: str | None = None,
+        rel_type: RelType | None = None,
     ) -> list[Relationship]:
         """List relationships for a campaign, optionally filtered by entity or type."""
         query = "SELECT * FROM relationships WHERE campaign_id = ?"
@@ -639,7 +662,7 @@ class Store:
 
     def find_relationship(
         self, campaign_id: str, source_id: str, target_id: str, rel_type: RelType
-    ) -> Optional[Relationship]:
+    ) -> Relationship | None:
         """Find a specific relationship."""
         row = self.conn.execute(
             """SELECT * FROM relationships
@@ -706,7 +729,7 @@ class Store:
         )
         self.conn.commit()
 
-    def get_subject_profile(self, profile_id: str) -> Optional[SubjectProfile]:
+    def get_subject_profile(self, profile_id: str) -> SubjectProfile | None:
         """Load a subject profile by ID."""
         row = self.conn.execute(
             "SELECT * FROM subject_profiles WHERE id = ?", (profile_id,)
@@ -717,7 +740,7 @@ class Store:
 
     def get_subject_by_entity(
         self, campaign_id: str, entity_id: str
-    ) -> Optional[SubjectProfile]:
+    ) -> SubjectProfile | None:
         """Find a subject profile by its linked entity."""
         row = self.conn.execute(
             "SELECT * FROM subject_profiles WHERE campaign_id = ? AND entity_id = ?",

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from ice_9.core.models import Evidence
 
@@ -56,7 +55,7 @@ class EvidenceManager:
             file_path=str(dest),
             description=description,
             sha256=sha,
-            captured_at=datetime.utcnow(),
+            captured_at=datetime.now(timezone.utc),
             content_type=content_type,
         )
 
@@ -82,7 +81,7 @@ class EvidenceManager:
             file_path=str(dest),
             description=description,
             sha256=sha,
-            captured_at=datetime.utcnow(),
+            captured_at=datetime.now(timezone.utc),
             content_type="text/plain",
         )
 

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import re
-import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
 
 from ice_9.ai.providers import Provider, ProviderRegistry, ProviderType
 
@@ -96,7 +94,7 @@ class ModelRouter:
         self,
         prompt: str,
         context: str = "",
-        force_provider: Optional[str] = None,
+        force_provider: str | None = None,
         min_quality: TaskComplexity = TaskComplexity.TRIVIAL,
     ) -> RoutingDecision:
         """Select the best provider for a given prompt.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 TARS_PERSONALITY = (
     "You are TARS — Tactical Autonomous Reasoning System.\n\n"
     "Personality traits:\n"

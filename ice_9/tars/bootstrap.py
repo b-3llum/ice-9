@@ -9,18 +9,17 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ice_9.ai.agent_loop import AgentLoop
 from ice_9.ai.llm import LLMClient
 from ice_9.ai.memory import MemoryManager
-from ice_9.ai.router import ModelRouter
 from ice_9.ai.providers import ProviderRegistry
-from ice_9.config.settings import load_settings, Settings
+from ice_9.ai.router import ModelRouter
+from ice_9.config.settings import Settings, load_settings
 from ice_9.tools.python_exec import execute_python
 from ice_9.tools.remote import RemoteHost, remote_exec
-from ice_9.tools.schema import ToolSchemaRegistry, build_default_registry
-
+from ice_9.tools.schema import build_default_registry
 
 # ------------------------------------------------------------------
 # Built-in tool implementations for the agent
@@ -122,7 +121,7 @@ def _build_tool_functions(settings: Settings) -> dict[str, Any]:
 # ------------------------------------------------------------------
 
 def build_agent(
-    config_path: Optional[Path] = None,
+    config_path: Path | None = None,
     enable_rag: bool = True,
 ) -> AgentLoop:
     """Build a fully-wired TARS AgentLoop.

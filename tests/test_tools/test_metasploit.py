@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from ice_9.tools.metasploit import MetasploitWrapper
 
 
@@ -58,7 +57,7 @@ class TestBuildCommand:
         content = open(rc_path).read()
         # Each command should be on its own line, no semicolons
         assert "; " not in content
-        lines = [l for l in content.strip().splitlines() if l.strip()]
+        lines = [line for line in content.strip().splitlines() if line.strip()]
         assert len(lines) >= 4  # use, set RHOSTS, run, exit at minimum
         os.unlink(rc_path)
 

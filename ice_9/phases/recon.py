@@ -176,7 +176,6 @@ class ReconPhase(PhaseModule):
         findings = []
         emails = result.parsed.get("emails", [])
         subdomains = result.parsed.get("subdomains", [])
-        ips = result.parsed.get("ips", [])
 
         if emails:
             findings.append(self._create_finding(

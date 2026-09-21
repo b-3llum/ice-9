@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from ice_9.ai.rag.store import RAGStore
-
 
 # Default file extensions to ingest
 DEFAULT_EXTENSIONS: set[str] = {
@@ -29,7 +27,7 @@ def ingest_directory(
     rag: RAGStore,
     directory: str | Path,
     source: str = "bulk",
-    extensions: Optional[set[str]] = None,
+    extensions: set[str] | None = None,
     max_file_size_mb: float = 10.0,
 ) -> int:
     """Recursively ingest all supported files from a directory.
@@ -73,7 +71,7 @@ def ingest_text(
     rag: RAGStore,
     text: str,
     source: str = "inline",
-    metadata: Optional[dict] = None,
+    metadata: dict | None = None,
 ) -> int:
     """Ingest a raw text string into the knowledge base.
 

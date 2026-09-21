@@ -3,27 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
+import secrets
 import threading
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from ice_9 import __version__
 from ice_9.config.settings import load_settings
 from ice_9.core.audit import AuditLogger
 from ice_9.core.campaign import (
-    create_campaign,
-    transition_campaign,
-    start_phase,
     complete_phase,
-    skip_phase,
+    create_campaign,
     get_campaign_progress,
+    start_phase,
+    transition_campaign,
 )
 from ice_9.core.models import (
     Campaign,
@@ -31,7 +28,6 @@ from ice_9.core.models import (
     Finding,
     PhaseType,
     Severity,
-    PHASE_NAMES,
 )
 from ice_9.core.state import InvalidTransition
 from ice_9.db.store import Store
@@ -39,13 +35,16 @@ from ice_9.db.store import Store
 app = FastAPI(
     title="ice_9",
     description="Red team orchestration platform — REST API",
-    version="0.2.0",
+    version=__version__,
 )
 
+# Browsers reject credentialed requests against a wildcard origin, so only
+# enable credentials when explicit origins are configured.
+_cors_origins = [o.strip() for o in os.environ.get("ICE9_CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("ICE9_CORS_ORIGINS", "*").split(","),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -84,7 +83,7 @@ def get_audit():
 
 async def verify_api_key(x_api_key: str = Header(default="")):
     """Verify API key if ICE9_API_KEY is set."""
-    if API_KEY and x_api_key != API_KEY:
+    if API_KEY and not secrets.compare_digest(x_api_key, API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
@@ -113,10 +112,10 @@ class FindingCreate(BaseModel):
     severity: Severity = Severity.INFO
     description: str = ""
     remediation: str = ""
-    cvss: Optional[float] = None
+    cvss: float | None = None
     cve_ids: list[str] = Field(default_factory=list)
     att_ck_ids: list[str] = Field(default_factory=list)
-    phase_id: Optional[str] = None
+    phase_id: str | None = None
 
 
 class CampaignResponse(BaseModel):
@@ -141,7 +140,7 @@ class HealthResponse(BaseModel):
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    return HealthResponse(status="ok", version="0.1.0")
+    return HealthResponse(status="ok", version=__version__)
 
 
 # --- Campaign endpoints ---
@@ -171,7 +170,7 @@ async def api_create_campaign(body: CampaignCreate):
 
 
 @app.get("/campaigns", dependencies=[Depends(verify_api_key)])
-async def api_list_campaigns(status: Optional[str] = None):
+async def api_list_campaigns(status: str | None = None):
     store = get_store()
     filter_status = CampaignStatus(status) if status else None
     campaigns = store.list_campaigns(status=filter_status)
@@ -217,7 +216,7 @@ async def api_transition_campaign(campaign_id: str, body: CampaignTransition):
         )
         return _campaign_response(campaign)
     except InvalidTransition as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
 
 @app.delete("/campaigns/{campaign_id}", dependencies=[Depends(verify_api_key)])
@@ -257,7 +256,7 @@ async def api_start_phase(campaign_id: str, phase_type: str):
         )
         return {"phase_id": phase.id, "status": phase.status.value}
     except (InvalidTransition, ValueError) as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post(
@@ -278,7 +277,7 @@ async def api_complete_phase(campaign_id: str, phase_type: str):
         audit.log("api.phase.complete", campaign_id=campaign.id, phase_id=phase.id)
         return {"phase_id": phase.id, "status": phase.status.value}
     except (InvalidTransition, ValueError) as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
 
 # --- Phase run endpoint (runs in API process for EventBus visibility) ---
@@ -334,6 +333,7 @@ async def api_run_phase(campaign_id: str, phase_type: str):
     audit = get_audit()
 
     def run_phase():
+        thread_store = None
         try:
             # Each thread needs its own Store (SQLite thread safety)
             thread_store = Store(get_settings().db_path, check_same_thread=False)
@@ -342,8 +342,9 @@ async def api_run_phase(campaign_id: str, phase_type: str):
                 return
             module = module_class(store=thread_store, audit=audit)
             module.run(thread_campaign)
-            thread_store.close()
         finally:
+            if thread_store is not None:
+                thread_store.close()
             with _running_lock:
                 _running_phases.pop(campaign_id, None)
 
@@ -424,7 +425,7 @@ async def api_create_finding(campaign_id: str, body: FindingCreate):
 
 
 @app.get("/audit", dependencies=[Depends(verify_api_key)])
-async def api_audit_log(limit: int = 50, campaign_id: Optional[str] = None):
+async def api_audit_log(limit: int = 50, campaign_id: str | None = None):
     audit = get_audit()
     if campaign_id:
         return audit.search(campaign_id=campaign_id)[-limit:]
@@ -436,7 +437,7 @@ async def api_audit_log(limit: int = 50, campaign_id: Optional[str] = None):
 
 @app.get("/tools", dependencies=[Depends(verify_api_key)])
 async def api_list_tools():
-    from ice_9.tools.custom import register_defaults, list_tools
+    from ice_9.tools.custom import list_tools, register_defaults
 
     register_defaults()
     return [t.get_info() for t in list_tools()]
@@ -514,8 +515,8 @@ class AIAutoRequest(BaseModel):
 
 def _build_team_orchestrator():
     """Build TeamOrchestrator from settings (same as CLI _build_team)."""
-    from ice_9.ai.providers import ProviderRegistry
     from ice_9.ai.agents import AgentRegistry
+    from ice_9.ai.providers import ProviderRegistry
     from ice_9.ai.team import TeamOrchestrator
 
     settings = get_settings()
@@ -703,12 +704,22 @@ async def api_list_providers():
 
 
 @app.get("/events/stream")
-async def api_event_stream(campaign_id: Optional[str] = Query(default=None)):
-    """Server-Sent Events stream for real-time observability."""
-    from ice_9.core.events import event_bus, Event
+async def api_event_stream(
+    campaign_id: str | None = Query(default=None),
+    api_key: str = Query(default=""),
+):
+    """Server-Sent Events stream for real-time observability.
+
+    EventSource clients cannot set request headers, so the API key (when
+    configured) is accepted as a query parameter here.
+    """
+    if API_KEY and not secrets.compare_digest(api_key, API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    from ice_9.core.events import Event, event_bus
 
     queue: asyncio.Queue[Event] = asyncio.Queue()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def on_event(event: Event) -> None:
         # Pass through events with null campaign_id (tool events within a phase)
@@ -753,7 +764,7 @@ async def api_event_stream(campaign_id: Optional[str] = Query(default=None)):
 
 @app.get("/events/recent")
 async def api_events_recent(
-    campaign_id: Optional[str] = Query(default=None),
+    campaign_id: str | None = Query(default=None),
     limit: int = Query(default=50, le=200),
 ):
     """Get recent events from the history buffer."""
@@ -793,8 +804,8 @@ async def api_get_graph(campaign_id: str):
 )
 async def api_list_entities(
     campaign_id: str,
-    entity_type: Optional[str] = None,
-    search: Optional[str] = None,
+    entity_type: str | None = None,
+    search: str | None = None,
     min_confidence: float = 0.0,
 ):
     """List entities with optional filters."""
@@ -854,8 +865,8 @@ async def api_enrich_entity(campaign_id: str, entity_id: str):
 )
 async def api_list_relationships(
     campaign_id: str,
-    entity_id: Optional[str] = None,
-    rel_type: Optional[str] = None,
+    entity_id: str | None = None,
+    rel_type: str | None = None,
 ):
     """List relationships with optional filters."""
     from ice_9.core.intel import RelType
@@ -924,7 +935,7 @@ async def api_create_subject_profile(campaign_id: str, entity_id: str):
 
 class SimulationRequest(BaseModel):
     num_simulations: int = Field(default=50, ge=1, le=500)
-    scenarios: Optional[list[str]] = None
+    scenarios: list[str] | None = None
 
 
 @app.post(

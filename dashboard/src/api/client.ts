@@ -15,8 +15,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(`${res.status}: ${body}`)
   }
 
-  return res.json()
+  // Guard against empty bodies (e.g. 204 responses), which res.json() rejects.
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
+
+export { BASE_URL, API_KEY }
 
 export const api = {
   get: <T>(path: string) => request<T>(path),

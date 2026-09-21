@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class ProviderType(str, Enum):
@@ -21,8 +21,8 @@ class Provider:
 
     name: str
     provider_type: ProviderType
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None
+    base_url: str | None = None
+    api_key: str | None = None
     model: str = ""
     models: list[str] = field(default_factory=list)
     enabled: bool = True
@@ -52,7 +52,7 @@ class ProviderRegistry:
         """Register a provider."""
         self._providers[provider.name] = provider
 
-    def get(self, name: str) -> Optional[Provider]:
+    def get(self, name: str) -> Provider | None:
         """Get a provider by name."""
         return self._providers.get(name)
 
@@ -67,9 +67,7 @@ class ProviderRegistry:
             if not p.enabled:
                 continue
             # Ollama doesn't need an API key
-            if p.provider_type == ProviderType.OLLAMA:
-                available.append(p)
-            elif p.api_key:
+            if p.provider_type == ProviderType.OLLAMA or p.api_key:
                 available.append(p)
         return available
 

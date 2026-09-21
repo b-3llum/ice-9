@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
 
 class EventType(str, Enum):
@@ -54,8 +56,8 @@ class Event:
 
     type: EventType
     data: dict[str, Any] = field(default_factory=dict)
-    campaign_id: Optional[str] = None
-    phase_id: Optional[str] = None
+    campaign_id: str | None = None
+    phase_id: str | None = None
     timestamp: str = field(default="")
 
     def __post_init__(self) -> None:
@@ -105,10 +107,9 @@ class EventBus:
             subscribers = list(self._subscribers)
 
         for callback in subscribers:
-            try:
+            # Never let a bad subscriber break the emitter
+            with contextlib.suppress(Exception):
                 callback(event)
-            except Exception:
-                pass  # Never let a bad subscriber break the emitter
 
     def subscribe(self, callback: Callable[[Event], None]) -> Callable[[], None]:
         """Subscribe to events. Returns an unsubscribe function."""
@@ -116,19 +117,16 @@ class EventBus:
             self._subscribers.append(callback)
 
         def unsubscribe() -> None:
-            with self._lock:
-                try:
-                    self._subscribers.remove(callback)
-                except ValueError:
-                    pass
+            with self._lock, contextlib.suppress(ValueError):
+                self._subscribers.remove(callback)
 
         return unsubscribe
 
     def history(
         self,
         limit: int = 50,
-        campaign_id: Optional[str] = None,
-        types: Optional[list[EventType]] = None,
+        campaign_id: str | None = None,
+        types: list[EventType] | None = None,
     ) -> list[Event]:
         """Get recent events from history buffer."""
         with self._lock:

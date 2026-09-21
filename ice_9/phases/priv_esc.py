@@ -122,7 +122,7 @@ class PrivEscPhase(PhaseModule):
         }
 
         for nf in result.parsed.get("findings", []):
-            severity = sev_map.get(nf.get("severity", ""), None)
+            severity = sev_map.get(nf.get("severity", ""))
             if severity:
                 findings.append(self._create_finding(
                     title=f"Priv Esc: {nf.get('template_name', nf.get('template_id', 'Unknown'))}",

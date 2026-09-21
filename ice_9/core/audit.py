@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class AuditLogger:
@@ -20,15 +20,15 @@ class AuditLogger:
         self,
         action: str,
         *,
-        campaign_id: Optional[str] = None,
-        phase_id: Optional[str] = None,
-        task_id: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
+        campaign_id: str | None = None,
+        phase_id: str | None = None,
+        task_id: str | None = None,
+        details: dict[str, Any] | None = None,
         operator: str = "ice9",
     ) -> dict[str, Any]:
         """Write an audit entry. Returns the entry dict."""
         entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
             "operator": operator,
         }
@@ -57,8 +57,8 @@ class AuditLogger:
     def search(
         self,
         *,
-        campaign_id: Optional[str] = None,
-        action: Optional[str] = None,
+        campaign_id: str | None = None,
+        action: str | None = None,
     ) -> list[dict[str, Any]]:
         """Filter audit entries by campaign or action."""
         entries = []

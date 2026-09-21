@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
+from ice_9.core.audit import AuditLogger
+from ice_9.core.campaign import complete_phase, start_phase
 from ice_9.core.models import (
     Campaign,
     Finding,
@@ -14,12 +16,10 @@ from ice_9.core.models import (
     Task,
     TaskStatus,
 )
-from ice_9.core.campaign import start_phase, complete_phase
 from ice_9.db.store import Store
-from ice_9.core.audit import AuditLogger
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.output.console import print_error, print_info, print_success, print_warning
+from ice_9.tools.base import ToolResult
 from ice_9.tools.custom import get_tool
-from ice_9.output.console import print_info, print_success, print_error, print_warning, console
 
 
 class PhaseModule(ABC):
@@ -67,9 +67,10 @@ class PhaseModule(ABC):
             return base_tasks
 
         try:
-            from ice_9.ai.agents import AgentRole
             import json as _json
             import re as _re
+
+            from ice_9.ai.agents import AgentRole
 
             context = orchestrator.get_campaign_context(campaign)
             tool_names = ", ".join(self.required_tools) if self.required_tools else "none"
@@ -110,7 +111,7 @@ class PhaseModule(ABC):
 
     def run(self, campaign: Campaign) -> list[ToolResult]:
         """Execute the full phase workflow."""
-        from ice_9.core.events import event_bus, Event, EventType
+        from ice_9.core.events import Event, EventType, event_bus
 
         # Check prerequisites
         missing = self.check_prerequisites()
@@ -255,7 +256,7 @@ class PhaseModule(ABC):
 
         return results
 
-    def _get_phase(self, campaign: Campaign) -> Optional[Phase]:
+    def _get_phase(self, campaign: Campaign) -> Phase | None:
         """Get the phase object from the campaign."""
         return next(
             (p for p in campaign.phases if p.phase_type == self.phase_type), None
@@ -267,7 +268,7 @@ class PhaseModule(ABC):
         severity: Severity = Severity.INFO,
         description: str = "",
         remediation: str = "",
-        cvss: Optional[float] = None,
+        cvss: float | None = None,
         cve_ids: list[str] | None = None,
         att_ck_ids: list[str] | None = None,
     ) -> Finding:

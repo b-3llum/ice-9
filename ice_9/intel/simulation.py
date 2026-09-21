@@ -14,9 +14,7 @@ Pipeline:
 from __future__ import annotations
 
 import json
-import random
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
 from ice_9.ai.team import TeamOrchestrator
@@ -28,7 +26,6 @@ from ice_9.core.intel import (
     SimulationResult,
     SubjectProfile,
 )
-
 
 # Default SE scenarios to simulate
 DEFAULT_SCENARIOS = [
@@ -59,7 +56,7 @@ class BehavioralSimulator:
         subject: SubjectProfile,
         entity_graph: list[Entity],
         relationships: list[Relationship],
-        scenarios: Optional[list[str]] = None,
+        scenarios: list[str] | None = None,
         num_simulations: int = 50,
         campaign_id: str = "",
     ) -> SimulationResult:
@@ -116,7 +113,7 @@ class BehavioralSimulator:
             best_approach=best,
             report=report,
             confidence=self._assess_confidence(subject),
-            simulated_at=datetime.utcnow(),
+            simulated_at=datetime.now(timezone.utc),
         )
 
         event_bus.emit(Event(

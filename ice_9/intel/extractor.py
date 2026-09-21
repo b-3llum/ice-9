@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any
 
 from ice_9.core.intel import Entity, EntityType, Relationship, RelType
-from ice_9.core.models import Task, Finding
+from ice_9.core.models import Task
 from ice_9.db.store import Store
 
 
@@ -80,7 +80,7 @@ class EntityExtractor:
                 existing.confidence = max(existing.confidence, entity.confidence)
                 existing.sources = list(set(existing.sources + entity.sources))
                 existing.properties.update(entity.properties)
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(timezone.utc)
                 result.append(existing)
             else:
                 result.append(entity)
@@ -190,7 +190,6 @@ class EntityExtractor:
                 product = port_data.get("product", "")
                 version = port_data.get("version", "")
 
-                svc_display = f"{service_name}/{port_num}"
                 svc_props: dict[str, Any] = {
                     "port": port_num,
                     "protocol": protocol,
@@ -198,7 +197,6 @@ class EntityExtractor:
                 }
                 if product:
                     svc_props["product"] = product
-                    svc_display = f"{product} {service_name}/{port_num}"
                 if version:
                     svc_props["version"] = version
 

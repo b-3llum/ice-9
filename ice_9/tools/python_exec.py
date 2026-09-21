@@ -11,7 +11,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # Patterns blocked from execution for safety
 BLOCKED_PATTERNS: list[str] = [
     "os.system(",

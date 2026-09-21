@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, RGBColor
 
-from ice_9.core.models import Campaign, Finding, Severity, PHASE_NAMES
 from ice_9.core.campaign import get_campaign_progress
+from ice_9.core.models import Campaign, Finding, Severity
 from ice_9.db.store import Store
-
 
 SEVERITY_COLORS = {
     Severity.CRITICAL: RGBColor(0xDC, 0x26, 0x26),  # Red
@@ -128,8 +126,8 @@ class ReportGenerator:
         meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
         meta.add_run(f"Client: {campaign.client or 'N/A'}\n").bold = True
         meta.add_run(f"Lead: {campaign.lead or 'N/A'}\n")
-        meta.add_run(f"Date: {datetime.utcnow().strftime('%B %d, %Y')}\n")
-        meta.add_run(f"Classification: CONFIDENTIAL\n").bold = True
+        meta.add_run(f"Date: {datetime.now(timezone.utc).strftime('%B %d, %Y')}\n")
+        meta.add_run("Classification: CONFIDENTIAL\n").bold = True
 
         for _ in range(4):
             doc.add_paragraph()
@@ -161,7 +159,7 @@ class ReportGenerator:
             for sev in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]:
                 count = severity_counts.get(sev, 0)
                 if count:
-                    p = doc.add_paragraph(f"  {sev.value.upper()}: {count}", style="List Bullet")
+                    doc.add_paragraph(f"  {sev.value.upper()}: {count}", style="List Bullet")
 
     def _add_scope_section(self, doc: Document, campaign: Campaign) -> None:
         """Add scope and methodology section."""

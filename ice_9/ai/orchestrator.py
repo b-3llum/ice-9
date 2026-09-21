@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
 from ice_9.ai.analyzer import analyze_findings
 from ice_9.ai.planner import generate_engagement_plan
 from ice_9.ai.team import TeamOrchestrator
 from ice_9.core.audit import AuditLogger
-from ice_9.core.models import Campaign, PhaseStatus, PhaseType, PHASE_NAMES
+from ice_9.core.models import PHASE_NAMES, Campaign, PhaseStatus, PhaseType
 from ice_9.db.store import Store
-from ice_9.output.console import print_info, print_success, print_warning, print_error
+from ice_9.output.console import print_error, print_info, print_success, print_warning
 from ice_9.tools.custom import register_defaults
 
 
@@ -29,7 +27,7 @@ class AutoRunResult:
     ai_plan: str = ""
     ai_synthesis: str = ""
     stopped_reason: str = ""
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
 
@@ -93,7 +91,7 @@ class CampaignOrchestrator:
         register_defaults()
         run_result = AutoRunResult()
 
-        from ice_9.core.events import event_bus, Event, EventType
+        from ice_9.core.events import Event, EventType, event_bus
 
         # Generate initial plan
         print_info("Generating AI engagement plan...")
@@ -167,7 +165,7 @@ class CampaignOrchestrator:
         # Final tally
         campaign = self.store.get_campaign(campaign.id) or campaign
         run_result.total_findings = sum(len(p.findings) for p in campaign.phases)
-        run_result.completed_at = datetime.utcnow()
+        run_result.completed_at = datetime.now(timezone.utc)
 
         if not run_result.stopped_reason:
             run_result.stopped_reason = f"Completed {max_phases} phase iterations"

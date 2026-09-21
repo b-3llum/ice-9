@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 import tempfile
-import time
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
 from ice_9.tools.base import ToolResult, ToolWrapper
-
 
 # Allowed characters in Metasploit module paths (e.g. exploit/windows/smb/ms17_010)
 _MODULE_PATH_RE = re.compile(r"^[a-zA-Z0-9_/.-]+$")
@@ -41,7 +38,7 @@ class MetasploitWrapper(ToolWrapper):
         self.port = port
         self.password = password
         self.ssl = ssl
-        self._token: Optional[str] = None
+        self._token: str | None = None
         self._http = httpx.Client(timeout=30, verify=False)
 
     @property

@@ -11,23 +11,21 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
-from ice_9.ai.llm import LLMClient, LLMResponse
+from ice_9.ai.llm import LLMClient
 from ice_9.ai.memory import MemoryManager
-from ice_9.ai.router import ModelRouter, TaskComplexity
 from ice_9.ai.prompts.agent_system import (
     TARS_PLANNER_PROMPT,
     TARS_REFLECTOR_PROMPT,
     build_system_prompt,
 )
+from ice_9.ai.router import ModelRouter, TaskComplexity
 from ice_9.tools.schema import ToolSchemaRegistry
-
 
 # ------------------------------------------------------------------
 # Data types

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -12,18 +11,16 @@ from ice_9.core.audit import AuditLogger
 from ice_9.core.campaign import (
     complete_phase,
     create_campaign,
-    get_campaign_progress,
     skip_phase,
     start_phase,
     transition_campaign,
 )
-from ice_9.core.models import CampaignStatus, PhaseType, PHASE_NAMES
+from ice_9.core.models import PHASE_NAMES, CampaignStatus, PhaseType
 from ice_9.core.state import InvalidTransition
 from ice_9.db.store import Store
 from ice_9.output.console import (
     console,
     print_audit_log,
-    print_banner,
     print_campaign_detail,
     print_campaign_table,
     print_error,
@@ -65,13 +62,13 @@ def _get_audit() -> AuditLogger:
 @campaign_app.command("create")
 def campaign_create(
     name: str = typer.Option(..., "--name", "-n", help="Campaign name"),
-    scope: Optional[list[str]] = typer.Option(
+    scope: list[str] | None = typer.Option(
         None, "--scope", "-s", help="Target scope (IP/CIDR/domain)"
     ),
     description: str = typer.Option("", "--desc", "-d", help="Description"),
     client: str = typer.Option("", "--client", "-c", help="Client name"),
     lead: str = typer.Option("", "--lead", "-l", help="Team lead"),
-    exclusion: Optional[list[str]] = typer.Option(
+    exclusion: list[str] | None = typer.Option(
         None, "--exclude", "-x", help="Excluded targets"
     ),
 ) -> None:
@@ -104,7 +101,7 @@ def campaign_create(
 
 @campaign_app.command("list")
 def campaign_list(
-    status: Optional[str] = typer.Option(
+    status: str | None = typer.Option(
         None, "--status", help="Filter by status"
     ),
 ) -> None:
@@ -242,7 +239,7 @@ def campaign_auto(
     console.print(f"Stopped: {result.stopped_reason}")
 
     if result.ai_synthesis:
-        console.print(f"\n[bold]AI TEAM SYNTHESIS[/bold]\n")
+        console.print("\n[bold]AI TEAM SYNTHESIS[/bold]\n")
         console.print(result.ai_synthesis[:3000])
 
     orchestrator.close()
@@ -437,7 +434,7 @@ def phase_skip_cmd(
 @audit_app.command("show")
 def audit_show(
     limit: int = typer.Option(20, "--limit", "-n", help="Number of entries"),
-    campaign_id: Optional[str] = typer.Option(
+    campaign_id: str | None = typer.Option(
         None, "--campaign", "-c", help="Filter by campaign"
     ),
 ) -> None:
@@ -481,20 +478,11 @@ def findings_list(
 
 def _build_team():
     """Build the team orchestrator from config."""
-    from ice_9.ai.providers import ProviderRegistry
     from ice_9.ai.agents import AgentRegistry
+    from ice_9.ai.providers import ProviderRegistry
     from ice_9.ai.team import TeamOrchestrator
 
     settings = load_settings()
-    providers_conf = {
-        name: vars(pc) if hasattr(pc, '__dict__') else pc.__dict__
-        for name, pc in settings.providers.items()
-    } if settings.providers else {}
-    agents_conf = {
-        name: vars(ac) if hasattr(ac, '__dict__') else ac.__dict__
-        for name, ac in settings.agents.items()
-    } if settings.agents else {}
-
     # Handle Pydantic models
     prov_dict = {}
     for name, pc in settings.providers.items():
@@ -524,6 +512,7 @@ def _build_team():
 def team_status() -> None:
     """Show registered agents and their provider assignments."""
     from rich.table import Table
+
     from ice_9.ai.agents import AgentRegistry
 
     settings = load_settings()
@@ -557,7 +546,7 @@ def team_status() -> None:
 def team_ask(
     prompt: str = typer.Argument(help="Question or task for the agent"),
     agent: str = typer.Option("coordinator", "--agent", "-a", help="Agent role"),
-    campaign_id: Optional[str] = typer.Option(None, "--campaign", "-c", help="Campaign for context"),
+    campaign_id: str | None = typer.Option(None, "--campaign", "-c", help="Campaign for context"),
 ) -> None:
     """Ask a specific agent a question."""
     orchestrator = _build_team()
@@ -768,7 +757,8 @@ def report_generate(
 def tool_list() -> None:
     """List all registered tools and their availability."""
     from rich.table import Table
-    from ice_9.tools.custom import register_defaults, list_tools
+
+    from ice_9.tools.custom import list_tools, register_defaults
 
     register_defaults()
     tools = list_tools()
@@ -797,17 +787,16 @@ def tool_list() -> None:
 def tool_run(
     tool_name: str = typer.Argument(help="Tool name (e.g. nmap, nuclei, kerb-map)"),
     target: str = typer.Option(..., "--target", "-t", help="Target (IP/CIDR/domain)"),
-    campaign_id: Optional[str] = typer.Option(
+    campaign_id: str | None = typer.Option(
         None, "--campaign", "-c", help="Associate with campaign"
     ),
     profile: str = typer.Option("standard", "--profile", "-p", help="Scan profile"),
     timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds"),
-    args: Optional[list[str]] = typer.Option(None, "--arg", "-a", help="Extra arguments"),
+    args: list[str] | None = typer.Option(None, "--arg", "-a", help="Extra arguments"),
 ) -> None:
     """Execute a tool against a target."""
-    from datetime import datetime
-    from ice_9.tools.custom import register_defaults, get_tool
     from ice_9.core.models import Task, TaskStatus
+    from ice_9.tools.custom import get_tool, register_defaults
 
     register_defaults()
     tool = get_tool(tool_name)
@@ -822,7 +811,6 @@ def tool_run(
     # Resolve campaign if specified
     store = None
     campaign = None
-    phase_id = None
     if campaign_id:
         store = _get_store()
         campaign = _resolve_campaign(store, campaign_id)
@@ -883,10 +871,10 @@ def tool_add_custom(
     name: str = typer.Option(..., "--name", "-n", help="Tool name"),
     binary: str = typer.Option(..., "--binary", "-b", help="Binary/command"),
     description: str = typer.Option("", "--desc", "-d", help="Description"),
-    att_ck: Optional[list[str]] = typer.Option(None, "--attck", help="ATT&CK technique IDs"),
+    att_ck: list[str] | None = typer.Option(None, "--attck", help="ATT&CK technique IDs"),
 ) -> None:
     """Register a custom tool."""
-    from ice_9.tools.custom import CustomToolWrapper, register_tool, register_defaults
+    from ice_9.tools.custom import CustomToolWrapper, register_defaults, register_tool
 
     register_defaults()
     tool = CustomToolWrapper(
@@ -905,7 +893,6 @@ def tool_add_custom(
 
 def _print_tool_summary(tool_name: str, parsed: dict) -> None:
     """Print a summary of parsed tool output."""
-    from rich.table import Table
 
     if tool_name == "nmap":
         hosts = parsed.get("hosts", [])
@@ -972,7 +959,7 @@ def _resolve_campaign(store: Store, campaign_id: str):
     return None
 
 
-def _resolve_phase_type(phase_str: str) -> Optional[PhaseType]:
+def _resolve_phase_type(phase_str: str) -> PhaseType | None:
     """Resolve phase type from ATT&CK ID or friendly name."""
     # Try direct ATT&CK ID
     upper = phase_str.upper()

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
 from ice_9.ai.team import TeamOrchestrator
 from ice_9.core.events import Event, EventType, event_bus
-from ice_9.core.intel import Entity, EntityType, Relationship, SubjectProfile
+from ice_9.core.intel import Entity, Relationship, SubjectProfile
 from ice_9.db.store import Store
 
 
@@ -40,7 +39,7 @@ class SubjectProfiler:
         # AI-powered analysis
         self._analyze_with_ai(profile, entity, connected)
 
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = datetime.now(timezone.utc)
         self.store.save_subject_profile(profile)
 
         event_bus.emit(Event(

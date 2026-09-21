@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useEventStream } from '../hooks/useEventStream'
-import type { Ice9Event, EventType } from '../types/events'
+import type { Ice9Event } from '../types/events'
 
 const EVENT_STYLES: Record<string, { icon: string; color: string }> = {
   tool_start:          { icon: '⚡', color: 'text-cyan-400' },

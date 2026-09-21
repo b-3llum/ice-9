@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
@@ -85,7 +84,7 @@ class CrackMapExecWrapper(ToolWrapper):
         elif action == "exec":
             exec_cmd = kwargs.get("exec_command", "whoami")
             exec_method = kwargs.get("exec_method", "smbexec")
-            cmd.extend(["-x", exec_cmd, f"--exec-method", exec_method])
+            cmd.extend(["-x", exec_cmd, "--exec-method", exec_method])
 
         # Spider
         spider = kwargs.get("spider")
@@ -104,10 +103,8 @@ class CrackMapExecWrapper(ToolWrapper):
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
         """Parse CrackMapExec output."""
         lines = result.stdout.strip().splitlines()
-        hosts = {}
         shares = []
         credentials = []
-        sessions = []
         exec_results = []
 
         for line in lines:

@@ -1,12 +1,10 @@
 """Tests for tool registry."""
 
-from ice_9.tools.base import ToolWrapper, ToolResult
 from ice_9.tools.custom import (
-    register_tool,
+    _registry,
     get_tool,
     list_tools,
     register_defaults,
-    _registry,
 )
 
 
