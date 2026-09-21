@@ -70,6 +70,9 @@ def get_store():
     if _store is None:
         settings = get_settings()
         _store = Store(settings.db_path)
+        # Enable automatic entity extraction on phase completion (idempotent).
+        from ice_9.intel.hooks import register_intel_hooks
+        register_intel_hooks(settings.db_path)
     return _store
 
 

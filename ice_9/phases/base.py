@@ -179,11 +179,13 @@ class PhaseModule(ABC):
             result = tool.run(target, **params)
             results.append(result)
 
-            # Save task
+            # Save task. Stash the tool's parsed output under "_parsed" so the
+            # intel extractor (hooks / graph endpoint) can rebuild entities from
+            # stored tasks later.
             task = Task(
                 tool=tool_name,
                 target=target,
-                params=params,
+                params={**params, "_parsed": result.parsed},
                 status=TaskStatus.COMPLETED if result.success else TaskStatus.FAILED,
                 output=result.stdout[:10000],
                 att_ck_id=tool.att_ck_ids[0] if tool.att_ck_ids else None,
