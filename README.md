@@ -68,7 +68,7 @@ With services installed, the **API** runs on http://localhost:8443 and the **das
 
 - **Python 3.10+** (required)
 - **Node.js 18+** — for the web dashboard (optional if CLI-only)
-- **Ollama** — default local LLM provider, or set API keys for Claude / OpenAI / Groq
+- **LLM** — Ollama (local default), a Claude subscription via the `claude` CLI, or API keys for Claude / OpenAI / Groq
 - **Offensive tools** — install only the ones you need; missing tools are skipped, never fatal
 - **Platforms:** Linux (systemd) and macOS (launchd)
 
@@ -122,14 +122,33 @@ providers:
   ollama:
     base_url: "http://localhost:11434"
     model: "llama3.2:3b"
-  # claude:
+  # claude:                          # metered API (needs a key)
   #   api_key: "${ANTHROPIC_API_KEY}"
   #   model: "claude-sonnet-4-6-20250514"
+  # claude_cli:                      # subscription — uses the local `claude` CLI, no API key
+  #   model: "sonnet"
 agents:
   coordinator:
     provider: ollama
     model: "llama3.2:3b"
 ```
+
+### Using a Claude subscription (no API key)
+
+If you have the [`claude` CLI](https://claude.com/claude-code) installed and logged in, ice_9 can drive it directly with the `claude_cli` provider — your Claude subscription is used instead of a metered API key. Point any agent at it:
+
+```yaml
+providers:
+  claude_cli:
+    model: "sonnet"        # sonnet | opus | haiku, or a full model id
+    # base_url: "/path/to/claude"   # optional: override the CLI binary path
+agents:
+  coordinator:
+    provider: claude_cli
+    model: "opus"
+```
+
+ice_9 invokes `claude --print` headlessly per request; the CLI must be on `PATH` (or set `base_url` to its path).
 
 ### Environment variables
 
@@ -234,7 +253,7 @@ Agents run in parallel and their results are synthesised by the coordinator.
 | **Report Writer** | Drafts findings with severity ratings and remediation guidance |
 | **Code Analyst** | Reviews source for OWASP Top 10 and CWE issues |
 
-**Providers:** Ollama (default), Anthropic Claude, OpenAI, Groq, Mistral — with automatic fallback chains. **Autopilot** (`ice9 campaign auto`) lets the coordinator select and execute phases iteratively.
+**Providers:** Ollama (local default), Anthropic Claude (API key), **Claude via subscription** (the local `claude` CLI, no key — see [Configuration](#configuration)), OpenAI, Groq, and Mistral — with automatic fallback chains. **Autopilot** (`ice9 campaign auto`) lets the coordinator select and execute phases iteratively.
 
 ---
 

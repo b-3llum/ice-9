@@ -8,9 +8,12 @@ providers:
     base_url: "http://localhost:11434"
     model: "llama3.2:3b"
     models: ["llama3.2:3b", "llama3:latest"]
-  # claude:
+  # claude:                                # metered API (needs a key)
   #   api_key: "${ANTHROPIC_API_KEY}"
   #   model: "claude-sonnet-4-6-20250514"
+  # claude_cli:                            # subscription — via the local `claude` CLI, no API key
+  #   model: "sonnet"                      # sonnet | opus | haiku, or a full model id
+  #   # base_url: "/path/to/claude"        # optional: override the CLI binary path
   # openai:
   #   api_key: "${OPENAI_API_KEY}"
   #   model: "gpt-4o"

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,6 +47,8 @@ class LLMClient:
 
         if provider.provider_type == ProviderType.CLAUDE:
             return self._chat_claude(provider, messages, use_model, temperature, max_tokens)
+        elif provider.provider_type == ProviderType.CLAUDE_CLI:
+            return self._chat_claude_cli(provider, messages, use_model)
         elif provider.provider_type == ProviderType.OLLAMA:
             return self._chat_ollama(provider, messages, use_model, temperature)
         else:
@@ -96,6 +100,76 @@ class LLMClient:
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
             },
+        )
+
+    def _chat_claude_cli(
+        self,
+        provider: Provider,
+        messages: list[dict[str, str]],
+        model: str,
+    ) -> LLMResponse:
+        """Call Claude through the local `claude` CLI (subscription auth).
+
+        Uses `claude --print` (headless) so no API key is required — the CLI's
+        own logged-in subscription is used. `provider.base_url` may override the
+        binary path; otherwise `claude` is resolved from PATH. temperature and
+        max_tokens are not exposed by the CLI and are ignored here.
+        """
+        binary = provider.base_url or "claude"
+        resolved = shutil.which(binary) or binary
+
+        # Our system message replaces the CLI's default (coding-agent) system
+        # prompt so it behaves as the requested ice_9 agent; user/assistant
+        # turns are flattened into a single print-mode prompt.
+        system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        convo: list[str] = []
+        for m in messages:
+            if m["role"] == "user":
+                convo.append(m["content"])
+            elif m["role"] == "assistant":
+                convo.append(f"Assistant (previous): {m['content']}")
+        prompt = "\n\n".join(convo).strip()
+
+        cmd = [resolved, "--print", prompt, "--output-format", "json"]
+        if model:
+            cmd += ["--model", model]
+        if system_parts:
+            cmd += ["--system-prompt", "\n\n".join(system_parts)]
+
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=self.timeout
+            )
+        except FileNotFoundError as e:
+            raise RuntimeError(f"claude CLI not found: {binary}") from e
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(f"claude CLI timed out after {self.timeout}s") from e
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"claude CLI failed (exit {proc.returncode}): {proc.stderr.strip()[:500]}"
+            )
+
+        content = proc.stdout.strip()
+        usage: dict[str, int] | None = None
+        try:
+            payload = json.loads(proc.stdout)
+        except (json.JSONDecodeError, ValueError):
+            payload = None
+        if isinstance(payload, dict):
+            content = payload.get("result", content)
+            u = payload.get("usage") or {}
+            if u:
+                usage = {
+                    "input_tokens": u.get("input_tokens", 0),
+                    "output_tokens": u.get("output_tokens", 0),
+                }
+
+        return LLMResponse(
+            content=content,
+            model=model or "claude-cli",
+            provider=provider.name,
+            usage=usage,
         )
 
     def _chat_ollama(

@@ -10,6 +10,7 @@ from typing import Any
 class ProviderType(str, Enum):
     OLLAMA = "ollama"
     CLAUDE = "claude"
+    CLAUDE_CLI = "claude_cli"  # subscription-based, via the local `claude` CLI
     OPENAI = "openai"
     GROQ = "groq"
     MISTRAL = "mistral"
@@ -62,12 +63,13 @@ class ProviderRegistry:
 
     def list_available(self) -> list[Provider]:
         """List enabled providers with credentials."""
+        # Ollama (local) and the Claude CLI (subscription auth) need no API key.
+        keyless = (ProviderType.OLLAMA, ProviderType.CLAUDE_CLI)
         available = []
         for p in self._providers.values():
             if not p.enabled:
                 continue
-            # Ollama doesn't need an API key
-            if p.provider_type == ProviderType.OLLAMA or p.api_key:
+            if p.provider_type in keyless or p.api_key:
                 available.append(p)
         return available
 
@@ -85,6 +87,9 @@ class ProviderRegistry:
                     "ollama": ProviderType.OLLAMA,
                     "claude": ProviderType.CLAUDE,
                     "anthropic": ProviderType.CLAUDE,
+                    "claude_cli": ProviderType.CLAUDE_CLI,
+                    "claude-cli": ProviderType.CLAUDE_CLI,
+                    "claude_code": ProviderType.CLAUDE_CLI,
                     "openai": ProviderType.OPENAI,
                     "groq": ProviderType.GROQ,
                     "mistral": ProviderType.MISTRAL,
