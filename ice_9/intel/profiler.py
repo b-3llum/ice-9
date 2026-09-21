@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
+from ice_9.ai.json_utils import extract_json
 from ice_9.ai.team import TeamOrchestrator
 from ice_9.core.events import Event, EventType, event_bus
 from ice_9.core.intel import Entity, Relationship, SubjectProfile
@@ -163,19 +164,15 @@ class SubjectProfiler:
 
     def _apply_se_analysis(self, profile: SubjectProfile, ai_response: str) -> None:
         """Parse AI SE analysis and update profile."""
-        try:
-            start = ai_response.find("{")
-            end = ai_response.rfind("}") + 1
-            if start >= 0 and end > start:
-                data = json.loads(ai_response[start:end])
+        data = extract_json(ai_response)
+        if data is None:
+            return
 
-                if "susceptibility_scores" in data:
-                    profile.susceptibility_scores = data["susceptibility_scores"]
-                if "recommended_pretexts" in data:
-                    profile.recommended_pretexts = data["recommended_pretexts"]
-                if "communication_style" in data:
-                    profile.communication_style = data["communication_style"]
-                if "risk_factors" in data:
-                    profile.digital_footprint["risk_factors"] = data["risk_factors"]
-        except (json.JSONDecodeError, ValueError):
-            pass
+        if "susceptibility_scores" in data:
+            profile.susceptibility_scores = data["susceptibility_scores"]
+        if "recommended_pretexts" in data:
+            profile.recommended_pretexts = data["recommended_pretexts"]
+        if "communication_style" in data:
+            profile.communication_style = data["communication_style"]
+        if "risk_factors" in data:
+            profile.digital_footprint["risk_factors"] = data["risk_factors"]

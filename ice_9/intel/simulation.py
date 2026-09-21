@@ -17,6 +17,7 @@ import json
 from datetime import datetime, timezone
 
 from ice_9.ai.agents import AgentRole
+from ice_9.ai.json_utils import extract_json
 from ice_9.ai.team import TeamOrchestrator
 from ice_9.core.events import Event, EventType, event_bus
 from ice_9.core.intel import (
@@ -238,42 +239,8 @@ class BehavioralSimulator:
         pretext: str,
     ) -> ScenarioResult:
         """Parse AI simulation response into a ScenarioResult."""
-        try:
-            start = ai_response.find("{")
-            end = ai_response.rfind("}") + 1
-            if start < 0 or end <= start:
-                raise ValueError("No JSON found")
-
-            data = json.loads(ai_response[start:end])
-
-            success = data.get("success_count", 0)
-            partial = data.get("partial_count", 0)
-            fail = data.get("fail_count", 0)
-            detected = data.get("detected_count", 0)
-            total = success + partial + fail + detected
-
-            success_rate = (success + partial * 0.5) / total if total > 0 else 0.0
-
-            # Calculate confidence interval (simple binomial approximation)
-            if total > 0:
-                p = success_rate
-                margin = 1.96 * (p * (1 - p) / total) ** 0.5
-                ci = (max(0, p - margin), min(1, p + margin))
-            else:
-                ci = (0.0, 0.0)
-
-            return ScenarioResult(
-                scenario_name=scenario_name,
-                attack_vector=attack_vector,
-                pretext=pretext,
-                success_rate=round(success_rate, 3),
-                avg_response_time=data.get("avg_response_time", ""),
-                common_failure_modes=data.get("failure_modes", []),
-                sample_interactions=data.get("sample_interactions", [])[:3],
-                confidence_interval=(round(ci[0], 3), round(ci[1], 3)),
-            )
-
-        except (json.JSONDecodeError, ValueError):
+        data = extract_json(ai_response)
+        if data is None:
             return ScenarioResult(
                 scenario_name=scenario_name,
                 attack_vector=attack_vector,
@@ -281,6 +248,33 @@ class BehavioralSimulator:
                 success_rate=0.0,
                 common_failure_modes=["Failed to parse simulation results"],
             )
+
+        success = data.get("success_count", 0)
+        partial = data.get("partial_count", 0)
+        fail = data.get("fail_count", 0)
+        detected = data.get("detected_count", 0)
+        total = success + partial + fail + detected
+
+        success_rate = (success + partial * 0.5) / total if total > 0 else 0.0
+
+        # Calculate confidence interval (simple binomial approximation)
+        if total > 0:
+            p = success_rate
+            margin = 1.96 * (p * (1 - p) / total) ** 0.5
+            ci = (max(0, p - margin), min(1, p + margin))
+        else:
+            ci = (0.0, 0.0)
+
+        return ScenarioResult(
+            scenario_name=scenario_name,
+            attack_vector=attack_vector,
+            pretext=pretext,
+            success_rate=round(success_rate, 3),
+            avg_response_time=data.get("avg_response_time", ""),
+            common_failure_modes=data.get("failure_modes", []),
+            sample_interactions=data.get("sample_interactions", [])[:3],
+            confidence_interval=(round(ci[0], 3), round(ci[1], 3)),
+        )
 
     def _calculate_overall_susceptibility(
         self, results: list[ScenarioResult]
