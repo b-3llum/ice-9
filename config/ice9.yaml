@@ -2,6 +2,16 @@
 # Data directory — all campaign data, evidence, and audit logs stored here
 data_dir: ~/.ice9
 
+# Where campaign tools run. Default is local; set backend: ssh to run every
+# tool on a remote host you control (e.g. an AWS EC2 attack box) so scans
+# originate from that instance. The remote host must have the tools installed.
+# execution:
+#   backend: ssh
+#   host: 1.2.3.4
+#   user: kali
+#   port: 22
+#   key_file: ~/.ssh/ice9.pem
+
 # LLM Provider configuration
 providers:
   ollama:

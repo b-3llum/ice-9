@@ -46,6 +46,23 @@ app.add_typer(phase_app, name="phase")
 app.add_typer(audit_app, name="audit")
 
 
+@app.callback()
+def _configure() -> None:
+    """Configure the runtime before any command (e.g. remote execution backend)."""
+    from ice_9.tools.execution import ExecutionBackend, set_backend
+
+    ec = load_settings().execution
+    set_backend(
+        ExecutionBackend(
+            backend=ec.backend,
+            host=ec.host,
+            user=ec.user,
+            port=ec.port,
+            key_file=ec.key_file,
+        )
+    )
+
+
 def _get_store() -> Store:
     settings = load_settings()
     return Store(settings.db_path)

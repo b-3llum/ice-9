@@ -28,6 +28,16 @@ class AgentConfig(BaseModel):
     system_prompt: str = ""
 
 
+class ExecutionConfig(BaseModel):
+    """Where campaign tools run: locally, or over SSH on a remote host (e.g. an EC2 box)."""
+
+    backend: str = "local"  # "local" | "ssh"
+    host: str = ""
+    user: str = "root"
+    port: int = 22
+    key_file: str | None = None
+
+
 class Settings(BaseModel):
     """Top-level ice_9 settings."""
 
@@ -38,6 +48,7 @@ class Settings(BaseModel):
     tool_paths: list[str] = Field(default_factory=list)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     agents: dict[str, AgentConfig] = Field(default_factory=dict)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
     def model_post_init(self, __context: Any) -> None:
         import os
