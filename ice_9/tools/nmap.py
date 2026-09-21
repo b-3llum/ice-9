@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper
@@ -29,14 +27,9 @@ class NmapWrapper(ToolWrapper):
     binary = "nmap"
     att_ck_ids = ["T1046", "T1018", "T1135"]  # Network Service Scanning, Remote System Discovery, Network Share Discovery
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._xml_output: str | None = None
-
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         profile = kwargs.get("profile", "standard")
         extra_args = kwargs.get("args", [])
-        output_file = kwargs.get("output_file")
 
         cmd = [self.get_binary_path()]
 
@@ -48,12 +41,9 @@ class NmapWrapper(ToolWrapper):
         else:
             cmd.extend(SCAN_PROFILES["standard"])
 
-        # XML output for parsing
-        if not output_file:
-            self._xml_tmp = NamedTemporaryFile(suffix=".xml", delete=False)
-            output_file = self._xml_tmp.name
-        self._xml_output = output_file
-        cmd.extend(["-oX", output_file])
+        # Emit XML to stdout so parsing works both locally and over an SSH
+        # execution backend (a temp file would land on the remote host).
+        cmd.extend(["-oX", "-"])
 
         # Extra args
         if extra_args:
@@ -64,16 +54,11 @@ class NmapWrapper(ToolWrapper):
         return cmd
 
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
-        """Parse Nmap XML output into structured data."""
-        if not self._xml_output:
-            return self._parse_text(result.stdout)
-
-        xml_path = Path(self._xml_output)
-        if not xml_path.exists():
-            return self._parse_text(result.stdout)
-
-        result.artifacts.append(xml_path)
-        return self._parse_xml(xml_path.read_text())
+        """Parse Nmap XML output (emitted to stdout) into structured data."""
+        xml_content = result.stdout
+        if "<nmaprun" not in xml_content:
+            return self._parse_text(xml_content)
+        return self._parse_xml(xml_content)
 
     def _parse_xml(self, xml_content: str) -> dict[str, Any]:
         """Parse Nmap XML output."""
