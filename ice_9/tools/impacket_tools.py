@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
+from ice_9.tools.base import (
+    ToolResult,
+    ToolWrapper,
+    resolve_binary,
+    validate_output_path,
+)
 
 
 class ImpacketTool(ToolWrapper):
@@ -99,7 +104,7 @@ class SecretsDump(ImpacketTool):
 
         output_file = kwargs.get("output_file")
         if output_file:
-            cmd.extend(["-outputfile", output_file])
+            cmd.extend(["-outputfile", validate_output_path(output_file)])
 
         return cmd
 
@@ -145,19 +150,23 @@ class GetNPUsers(ImpacketTool):
         cmd = [self.get_binary_path()]
 
         domain = kwargs.get("domain", target)
-        cmd.append(f"{domain}/")
+        username = kwargs.get("username")
+        password = kwargs.get("password")
+
+        # Build the auth principal: domain/[user[:password]]. Appended as a
+        # single argument so later options (e.g. -dc-ip) are never clobbered.
+        principal = f"{domain}/"
+        if username:
+            principal += username
+            if password:
+                principal += f":{password}"
+        cmd.append(principal)
 
         dc_ip = kwargs.get("dc_ip", target)
         cmd.extend(["-dc-ip", dc_ip])
 
-        username = kwargs.get("username")
-        password = kwargs.get("password")
-        if username:
-            cmd[-1] = f"{domain}/{username}"
-            if password:
-                cmd[-1] += f":{password}"
-        else:
-            # No auth — request all users
+        if not username:
+            # No credentials — request all users (unauthenticated AS-REP roast)
             cmd.append("-no-pass")
 
         usersfile = kwargs.get("usersfile")
@@ -169,7 +178,7 @@ class GetNPUsers(ImpacketTool):
 
         output_file = kwargs.get("output_file")
         if output_file:
-            cmd.extend(["-outputfile", output_file])
+            cmd.extend(["-outputfile", validate_output_path(output_file)])
 
         return cmd
 
@@ -210,7 +219,8 @@ class GetUserSPNs(ImpacketTool):
         if kwargs.get("request", True):
             cmd.append("-request")
 
-        cmd.extend(["-outputfile", kwargs.get("output_file", "/tmp/kerberoast.txt")])
+        output_file = validate_output_path(kwargs.get("output_file", "/tmp/kerberoast.txt"))
+        cmd.extend(["-outputfile", output_file])
 
         return cmd
 

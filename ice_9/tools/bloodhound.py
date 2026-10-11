@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
 
 # Pre-built Cypher queries for common attack path analysis
 CYPHER_QUERIES = {
@@ -109,7 +109,8 @@ class BloodHoundWrapper(ToolWrapper):
             cmd.extend(["-ns", ns])
 
         # Output
-        cmd.extend(["--zip", "-o", kwargs.get("output_dir", "/tmp/bloodhound")])
+        output_dir = validate_output_path(kwargs.get("output_dir", "/tmp/bloodhound"))
+        cmd.extend(["--zip", "-o", output_dir])
 
         return cmd
 

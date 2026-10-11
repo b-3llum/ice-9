@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -53,6 +54,87 @@ def resolve_binary(name: str) -> str | None:
             return candidate
 
     return None
+
+
+
+def ice9_data_dir() -> Path:
+    """Base directory for ice_9 state and tool output.
+
+    Honours the ``ICE9_HOME`` environment variable (documented in the README),
+    falling back to ``~/.ice9``.
+    """
+    env = os.environ.get("ICE9_HOME")
+    base = Path(env) if env else Path.home() / ".ice9"
+    return base.expanduser()
+
+
+def _default_output_roots() -> list[Path]:
+    """Directories a tool is allowed to write output into."""
+    roots = [ice9_data_dir(), Path(tempfile.gettempdir()), Path("/tmp")]
+    resolved: list[Path] = []
+    seen: set[str] = set()
+    for r in roots:
+        rp = r.expanduser().resolve()
+        if str(rp) not in seen:
+            seen.add(str(rp))
+            resolved.append(rp)
+    return resolved
+
+
+def validate_output_path(
+    path: str | os.PathLike[str],
+    *,
+    allowed_roots: list[Path] | None = None,
+) -> str:
+    """Confine a caller-supplied output path to an allowed directory.
+
+    Several tool wrappers accept an output location (``output_file``,
+    ``output_dir``) that is passed straight to an offensive binary which then
+    *writes* to it. Left unchecked, a caller — an AI agent, a REST client, a
+    phase module — could redirect that write anywhere the process can reach
+    (``~/.ssh/authorized_keys``, a systemd unit, a cron file), turning a report
+    path into an arbitrary-file-write primitive.
+
+    The path is expanded (``~``) and normalised (``..`` collapsed, symlinks in
+    any existing prefix resolved); the result must sit inside one of
+    *allowed_roots* (default: the ice_9 data dir and the system temp dir). A
+    relative path is resolved against the first allowed root rather than the
+    process working directory.
+
+    Returns:
+        The normalised absolute path as a string.
+
+    Raises:
+        ValueError: if the path is empty, contains a null byte, or escapes
+            every allowed root.
+    """
+    roots = (
+        [Path(r).expanduser().resolve() for r in allowed_roots]
+        if allowed_roots is not None
+        else _default_output_roots()
+    )
+    if not roots:
+        raise ValueError("No allowed output roots configured")
+
+    text = str(path)
+    if not text.strip():
+        raise ValueError("Output path must not be empty")
+    if "\x00" in text:
+        raise ValueError("Output path must not contain null bytes")
+
+    candidate = Path(text).expanduser()
+    if not candidate.is_absolute():
+        candidate = roots[0] / candidate
+    resolved = candidate.resolve()
+
+    for root in roots:
+        if resolved == root or root in resolved.parents:
+            return str(resolved)
+
+    allowed = ", ".join(str(r) for r in roots)
+    raise ValueError(
+        f"Output path {text!r} escapes the allowed directories ({allowed})"
+    )
 
 
 @dataclass

@@ -1,7 +1,9 @@
 """Tests for Impacket tool wrappers and shared auth builder."""
 
 
+import pytest
 from ice_9.tools.impacket_tools import (
+    GetNPUsers,
     GetUserSPNs,
     ImpacketTool,
     PsExec,
@@ -195,3 +197,96 @@ class TestWmiExec:
         assert "-c" in cmd
         idx = cmd.index("-c")
         assert cmd[idx + 1] == "ipconfig"
+
+
+# ---------------------------------------------------------------------------
+# GetNPUsers (AS-REP roasting)
+# ---------------------------------------------------------------------------
+
+
+class TestGetNPUsers:
+    def test_authenticated_principal_and_dc_ip(self):
+        """With credentials the principal carries user[:password] and -dc-ip
+        keeps the DC address (regression: the old code overwrote -dc-ip)."""
+        tool = GetNPUsers()
+        cmd = tool.build_command(
+            "10.0.0.1", domain="CORP", username="alice", password="pw", dc_ip="10.0.0.5"
+        )
+        assert "CORP/alice:pw" in cmd
+        idx = cmd.index("-dc-ip")
+        assert cmd[idx + 1] == "10.0.0.5"
+        assert "-no-pass" not in cmd
+
+    def test_username_without_password(self):
+        tool = GetNPUsers()
+        cmd = tool.build_command("10.0.0.1", domain="CORP", username="bob", dc_ip="10.0.0.5")
+        assert "CORP/bob" in cmd
+        assert "CORP/bob:" not in " ".join(cmd)
+        assert "-no-pass" not in cmd
+
+    def test_no_credentials_requests_no_pass(self):
+        tool = GetNPUsers()
+        cmd = tool.build_command("10.0.0.1", domain="CORP", dc_ip="10.0.0.5")
+        assert "CORP/" in cmd
+        assert "-no-pass" in cmd
+        idx = cmd.index("-dc-ip")
+        assert cmd[idx + 1] == "10.0.0.5"
+
+    def test_dc_ip_defaults_to_target(self):
+        tool = GetNPUsers()
+        cmd = tool.build_command("10.0.0.1", domain="CORP", username="bob")
+        idx = cmd.index("-dc-ip")
+        assert cmd[idx + 1] == "10.0.0.1"
+
+    def test_hashcat_format_and_usersfile(self):
+        tool = GetNPUsers()
+        cmd = tool.build_command("10.0.0.1", domain="CORP", usersfile="/tmp/users.txt")
+        assert "-format" in cmd
+        assert cmd[cmd.index("-format") + 1] == "hashcat"
+        assert "-usersfile" in cmd
+        assert cmd[cmd.index("-usersfile") + 1] == "/tmp/users.txt"
+
+    def test_output_file_validated(self):
+        tool = GetNPUsers()
+        cmd = tool.build_command(
+            "10.0.0.1", domain="CORP", output_file="/tmp/asrep.txt"
+        )
+        assert "-outputfile" in cmd
+        assert "/tmp/asrep.txt" in cmd
+
+    def test_output_file_rejects_traversal(self):
+        tool = GetNPUsers()
+        with pytest.raises(ValueError):
+            tool.build_command(
+                "10.0.0.1", domain="CORP", output_file="/etc/cron.d/evil"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Output-path confinement on the impacket writers
+# ---------------------------------------------------------------------------
+
+
+class TestImpacketOutputPaths:
+    def test_secretsdump_rejects_escape(self):
+        with pytest.raises(ValueError):
+            SecretsDump().build_command(
+                "10.0.0.1", username="admin", output_file="/root/.ssh/authorized_keys"
+            )
+
+    def test_secretsdump_accepts_tmp(self):
+        cmd = SecretsDump().build_command(
+            "10.0.0.1", username="admin", output_file="/tmp/dump.txt"
+        )
+        assert "/tmp/dump.txt" in cmd
+
+    def test_getuserspns_default_output_allowed(self):
+        cmd = GetUserSPNs().build_command("10.0.0.1", domain="CORP", username="svc")
+        assert "/tmp/kerberoast.txt" in cmd
+
+    def test_getuserspns_rejects_escape(self):
+        with pytest.raises(ValueError):
+            GetUserSPNs().build_command(
+                "10.0.0.1", domain="CORP", username="svc",
+                output_file="/etc/passwd",
+            )

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import tempfile
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from ice_9.tools.base import ToolResult, ToolWrapper
+
+logger = logging.getLogger(__name__)
 
 # Allowed characters in Metasploit module paths (e.g. exploit/windows/smb/ms17_010)
 _MODULE_PATH_RE = re.compile(r"^[a-zA-Z0-9_/.-]+$")
@@ -32,10 +36,12 @@ class MetasploitWrapper(ToolWrapper):
         port: int = 55553,
         password: str = "msf",
         ssl: bool = True,
+        username: str = "msf",
     ) -> None:
         super().__init__()
         self.host = host
         self.port = port
+        self.username = username
         self.password = password
         self.ssl = ssl
         self._token: str | None = None
@@ -139,18 +145,35 @@ class MetasploitWrapper(ToolWrapper):
     # --- MSFRPC API methods ---
 
     def _authenticate(self) -> bool:
-        """Authenticate to msfrpcd."""
+        """Authenticate to msfrpcd.
+
+        Returns ``True`` on success. Connection and HTTP errors are logged and
+        reported as a failed authentication instead of being silently
+        swallowed, so an operator can tell a down RPC service from a wrong
+        password when a Metasploit run fails.
+        """
         try:
             resp = self._http.post(
                 f"{self.base_url}/auth/login",
-                json={"username": "msf", "password": self.password},
+                json={"username": self.username, "password": self.password},
             )
-            if resp.status_code == 200:
-                self._token = resp.json().get("token")
-                return True
-        except Exception:
-            pass
-        return False
+        except httpx.HTTPError as exc:
+            logger.warning("Metasploit RPC authentication request failed: %s", exc)
+            return False
+
+        if resp.status_code != 200:
+            logger.warning(
+                "Metasploit RPC authentication rejected (HTTP %s)", resp.status_code
+            )
+            return False
+
+        try:
+            self._token = resp.json().get("token")
+        except ValueError as exc:
+            logger.warning("Metasploit RPC returned a non-JSON auth response: %s", exc)
+            return False
+
+        return self._token is not None
 
     def _api_call(self, method: str, endpoint: str, data: dict | None = None) -> dict:
         """Make an authenticated API call."""
@@ -169,8 +192,15 @@ class MetasploitWrapper(ToolWrapper):
         return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
     def search_modules(self, query: str) -> dict[str, Any]:
-        """Search for Metasploit modules."""
-        return self._api_call("GET", f"/modules/search?query={query}")
+        """Search for Metasploit modules.
+
+        The query is percent-encoded before being placed in the URL so that
+        special characters (spaces, ``&``, ``#``, ``?``) are sent as data
+        rather than altering the request path or query structure.
+        """
+        return self._api_call(
+            "GET", f"/modules/search?query={quote(query, safe='')}"
+        )
 
     def list_sessions(self) -> dict[str, Any]:
         """List active sessions."""

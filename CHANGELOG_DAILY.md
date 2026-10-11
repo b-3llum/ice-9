@@ -1,5 +1,29 @@
 # Daily Changelog
 
+## 2026-10-11 — Security: Output-Path Confinement + Tool Correctness
+
+**Focus:** Category A — Bugs and Security (path traversal, msfrpc hardening, GetNPUsers bug)
+
+**Changes:**
+
+- `ice_9/tools/base.py`: Added `validate_output_path()` and `ice9_data_dir()`. Several wrappers pass a caller-supplied output location straight to an offensive binary that then *writes* to it, so an AI agent / REST client / phase module could redirect that write anywhere the process can reach (`~/.ssh/authorized_keys`, a systemd unit, a cron file) — an arbitrary-file-write primitive. The new helper expands `~`, collapses `..`, resolves symlinks in any existing prefix, and requires the result to stay within an allowed root (the ice_9 data dir — honouring `ICE9_HOME` — plus the system temp dir and `/tmp`). Relative paths resolve against the data dir, never the process CWD. Empty paths and null bytes are rejected.
+- `ice_9/tools/{bloodhound,subfinder,theharvester}.py` and `ice_9/tools/impacket_tools.py` (`SecretsDump`, `GetNPUsers`, `GetUserSPNs`): route every `output_file` / `output_dir` kwarg through `validate_output_path()`. Existing defaults (`/tmp/bloodhound`, `/tmp/kerberoast.txt`) are unchanged and remain valid.
+- `ice_9/tools/impacket_tools.py` — `GetNPUsers.build_command`: fixed a correctness bug. The old code appended the principal as `domain/`, then `-dc-ip <ip>`, then overwrote `cmd[-1]` with `domain/user` — which clobbered the `-dc-ip` *value* instead of the principal. With a username the tool was invoked with an empty principal and a credential string where the DC IP belonged. The principal is now built in full and appended once; `-dc-ip` is left intact.
+- `ice_9/tools/metasploit.py`: replaced the bare `except Exception: pass` in `_authenticate()` with specific handling (connection error → log + False; non-200 → log + False; non-JSON body → log + False) via a module `logging` logger, so a down RPC service is distinguishable from a bad password. `search_modules()` now percent-encodes the query (`urllib.parse.quote(..., safe="")`) before placing it in the URL, so spaces/`&`/`#`/`?` are sent as data rather than altering the request. Added a configurable `username` field (default `"msf"`) instead of the hardcoded literal in the auth call.
+- Tests: new `tests/test_tools/test_output_path.py` (16 tests — allowed roots, traversal/escape rejection, empty/null-byte, `ICE9_HOME`, and wrapper-level rejection). Added `TestGetNPUsers` + `TestImpacketOutputPaths` to `test_impacket_tools.py` (11 tests, including a regression test for the `-dc-ip` clobber). Added `TestSearchModules` + `TestAuthenticate` to `test_metasploit.py` (URL encoding, username, and all four auth outcomes).
+
+**Test results:** 212 passed (up from 178), 0 failures. `ruff check ice_9 tests` clean.
+
+**Recommended next run focus:**
+- Category A: `impacket_tools.py` `NTLMRelayx` uses `target.endswith(".txt")` to pick `-tf` vs `-t` — fragile; an explicit `targets_file` kwarg would be clearer and safer.
+- Category A: `custom.py` generic runner accepts arbitrary `pre_args`/`post_args`/`args` without validation (lower risk — no `shell=True`, passed as list elements).
+- Category A: `config/settings.py` does not read `ICE9_HOME` even though the README documents it as the data-dir override; `validate_output_path`/`ice9_data_dir` now honour it, so settings should too for consistency.
+- Category B: `base.py:121,161`-era `datetime.utcnow()` deprecation warnings (if any remain in the suite).
+
+**Issues noticed but not fixed:**
+- `metasploit.py` `_http = httpx.Client(verify=False)` disables TLS verification for the local msfrpc connection — expected for a self-signed localhost service, but worth a config flag if remote msfrpcd is ever supported.
+- `bloodhound.py` imports `re` inside `parse_output` loop body rather than at module scope.
+
 ## 2026-03-22 (run 2) — Code Quality: Impacket Auth Deduplication
 
 **Focus:** Category B — Code Quality (impacket_tools.py duplication)

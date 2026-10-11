@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
 
 
 class SubfinderWrapper(ToolWrapper):
@@ -32,7 +32,7 @@ class SubfinderWrapper(ToolWrapper):
 
         output_file = kwargs.get("output_file")
         if output_file:
-            cmd.extend(["-o", output_file])
+            cmd.extend(["-o", validate_output_path(output_file)])
 
         return cmd
 

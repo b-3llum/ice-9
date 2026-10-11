@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+import httpx
 import pytest
 from ice_9.tools.metasploit import MetasploitWrapper
 
@@ -131,3 +132,82 @@ class TestInputValidation:
         )
         rc_path = cmd[cmd.index("-r") + 1]
         os.unlink(rc_path)
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload=None, raise_json: bool = False):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self._raise_json = raise_json
+
+    def json(self):
+        if self._raise_json:
+            raise ValueError("not json")
+        return self._payload
+
+
+class TestSearchModules:
+    """search_modules must percent-encode the query into the URL."""
+
+    def test_query_is_url_encoded(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        captured = {}
+
+        def fake_api_call(method, endpoint, data=None):
+            captured["method"] = method
+            captured["endpoint"] = endpoint
+            return {}
+
+        monkeypatch.setattr(msf, "_api_call", fake_api_call)
+        msf.search_modules("smb & rce #1")
+
+        assert captured["method"] == "GET"
+        # Spaces, & and # must be encoded, not passed through raw.
+        assert " " not in captured["endpoint"]
+        assert "&" not in captured["endpoint"]
+        assert "#" not in captured["endpoint"]
+        assert "%20" in captured["endpoint"]
+        assert "%26" in captured["endpoint"]
+        assert "%23" in captured["endpoint"]
+
+
+class TestAuthenticate:
+    """_authenticate reports failures instead of swallowing them."""
+
+    def test_default_username_is_msf(self) -> None:
+        assert MetasploitWrapper().username == "msf"
+
+    def test_custom_username(self) -> None:
+        assert MetasploitWrapper(username="operator").username == "operator"
+
+    def test_success_sets_token(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        sent = {}
+
+        def fake_post(url, json=None):
+            sent["json"] = json
+            return _FakeResponse(200, {"token": "abc123"})
+
+        monkeypatch.setattr(msf._http, "post", fake_post)
+        assert msf._authenticate() is True
+        assert msf._token == "abc123"
+        # Uses the configured username, not a hardcoded literal.
+        assert sent["json"]["username"] == msf.username
+
+    def test_connection_error_returns_false(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        def fake_post(url, json=None):
+            raise httpx.ConnectError("refused")
+
+        monkeypatch.setattr(msf._http, "post", fake_post)
+        assert msf._authenticate() is False
+        assert msf._token is None
+
+    def test_non_200_returns_false(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        monkeypatch.setattr(msf._http, "post", lambda url, json=None: _FakeResponse(401))
+        assert msf._authenticate() is False
+        assert msf._token is None
+
+    def test_non_json_body_returns_false(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        monkeypatch.setattr(
+            msf._http, "post", lambda url, json=None: _FakeResponse(200, raise_json=True)
+        )
+        assert msf._authenticate() is False
+        assert msf._token is None
