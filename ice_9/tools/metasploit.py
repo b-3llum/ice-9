@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import re
 import tempfile
 from typing import Any
@@ -98,6 +100,22 @@ class MetasploitWrapper(ToolWrapper):
         self._rc_file.close()
 
         return [self.get_binary_path(), "-q", "-r", self._rc_file.name]
+
+    def run(self, target: str, timeout: int = 300, **kwargs: Any) -> ToolResult:
+        """Run msfconsole, then remove the temp resource file it was handed.
+
+        build_command writes an ``ice9_msf_*.rc`` file (delete=False, so it
+        survives until msfconsole reads it); it holds RHOSTS/options/payload and
+        must not be left in the world-readable temp dir after the run.
+        """
+        try:
+            return super().run(target, timeout=timeout, **kwargs)
+        finally:
+            rc = getattr(self, "_rc_file", None)
+            if rc is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(rc.name)
+                self._rc_file = None
 
     @staticmethod
     def _validate_module_path(value: str) -> None:

@@ -124,36 +124,93 @@ class CrackMapExecWrapper(ToolWrapper):
         return cmd
 
     def parse_output(self, result: ToolResult) -> dict[str, Any]:
-        """Parse CrackMapExec output."""
-        lines = result.stdout.strip().splitlines()
-        shares = []
-        credentials = []
-        exec_results = []
+        """Parse CrackMapExec / NetExec output.
 
-        for line in lines:
-            # Parse host results
+        Produces a per-host ``hosts`` list — what the phase analyzers consume
+        (``ip``/``protocol``/``os``/``signing``/``pwned``/``admin``/``shares``,
+        each share ``{name, readable, writable}``) — plus the flat aggregates
+        kept for backward compatibility. nxc/CME print one line per host as
+        ``PROTO  IP  PORT  NAME  <message>``; hosts are keyed by IP.
+        """
+        lines = result.stdout.strip().splitlines()
+
+        hosts: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        shares: list[dict[str, str]] = []
+        credentials: list[dict[str, Any]] = []
+        exec_results: list[str] = []
+
+        def _host(ip: str) -> dict[str, Any]:
+            if ip not in hosts:
+                hosts[ip] = {
+                    "ip": ip, "protocol": None, "os": None, "signing": None,
+                    "pwned": False, "admin": False, "shares": [],
+                }
+                order.append(ip)
+            return hosts[ip]
+
+        for raw in lines:
+            line = raw.rstrip()
+            stripped = line.strip()
+            parts = stripped.split()
+
+            # --- Flat aggregates (kept for backward compatibility) ---
             if "[+]" in line or "[-]" in line or "[*]" in line:
                 if "Pwn3d!" in line:
-                    credentials.append({"line": line.strip(), "admin": True})
+                    credentials.append({"line": stripped, "admin": True})
                 elif "[+]" in line:
-                    credentials.append({"line": line.strip(), "admin": False})
+                    credentials.append({"line": stripped, "admin": False})
+            if ("READ" in line or "WRITE" in line) and len(parts) >= 3:
+                shares.append({
+                    "name": parts[0] if not parts[0].startswith("[") else parts[-3],
+                    "permissions": stripped,
+                })
+            if stripped and not any(m in line for m in ("[+]", "[-]", "[*]", "SMB")):
+                exec_results.append(stripped)
 
-            # Shares
-            if "READ" in line or "WRITE" in line:
-                parts = line.strip().split()
-                if len(parts) >= 3:
-                    shares.append({
-                        "name": parts[0] if not parts[0].startswith("[") else parts[-3],
-                        "permissions": line.strip(),
-                    })
-
-            # Command execution output
-            if line.strip() and not any(
-                marker in line for marker in ["[+]", "[-]", "[*]", "SMB"]
+            # --- Structured per-host parse: PROTO IP PORT NAME <message...> ---
+            if (
+                len(parts) < 4
+                or parts[0].lower() not in _VALID_PROTOCOLS
+                or not parts[2].isdigit()
             ):
-                exec_results.append(line.strip())
+                continue
+
+            ip = parts[1]
+            msg = " ".join(parts[4:])
+            msg_low = msg.lower()
+            host = _host(ip)
+            if host["protocol"] is None:
+                host["protocol"] = parts[0].upper()
+
+            # Host banner line carries the OS string and SMB signing status.
+            if "(signing:" in msg_low:
+                host["signing"] = "(signing:true)" in msg_low
+            if msg.startswith("[*]") and ("(name:" in msg_low or "(domain:" in msg_low):
+                os_text = msg[3:].strip()
+                cut = os_text.find(" (")
+                host["os"] = os_text[:cut].strip() if cut != -1 else os_text
+
+            # Admin / command-execution capability.
+            if "Pwn3d!" in msg:
+                host["pwned"] = True
+                host["admin"] = True
+
+            # Share-enumeration rows: "<ShareName>  <PERMS>  [remark]".
+            if (
+                not msg.startswith(("[*]", "[+]", "[-]"))
+                and parts[4:]
+                and parts[4] not in ("Share", "-----")
+                and ("READ" in msg or "WRITE" in msg)
+            ):
+                host["shares"].append({
+                    "name": parts[4],
+                    "readable": "READ" in msg,
+                    "writable": "WRITE" in msg,
+                })
 
         return {
+            "hosts": [hosts[ip] for ip in order],
             "credentials": credentials,
             "admin_access": [c for c in credentials if c.get("admin")],
             "shares": shares,

@@ -1,5 +1,24 @@
 # Daily Changelog
 
+## 2026-10-12 (run 6) — Correctness/Robustness Fixes from Code Review
+
+**Focus:** Category A — two correctness bugs, a robustness fix, and two smaller defects surfaced by an adversarial review of the core.
+
+**Changes:**
+
+- `ice_9/tools/base.py` — `ToolWrapper.run()` now actually enforces `timeout`. Previously the stdout drain (`for line in proc.stdout`) ran to EOF *before* `proc.wait(timeout=...)`, so a tool that never closes stdout (e.g. responder in listen mode, launched by the Initial Access phase) hung the caller forever and the timeout branch was unreachable. The run loop now arms a `threading.Timer` watchdog that kills the child's **process group** (`start_new_session=True` + `os.killpg(..., SIGKILL)`, so grandchildren holding the pipe die too) and drains stderr on a separate thread (fixing a potential >64 KiB-stderr pipe deadlock). A timed-out run returns code `-1` with a "timed out" note; streaming events are unchanged.
+- `ice_9/tools/crackmapexec.py` — `parse_output()` now emits the per-host `hosts` list the phase analyzers consume (`ip`/`protocol`/`os`/`signing`/`pwned`/`admin`/`shares` with `{name, readable, writable}`). The analyzers in Execution, Priv-Esc, Collection, Persistence, and Defense-Evasion read `parsed["hosts"]`, which the parser never produced — so every CrackMapExec-derived finding (command execution, local admin, SMB signing, readable/writable shares) was silently lost. The flat aggregate keys are kept for backward compatibility.
+- `ice_9/intel/extractor.py` — `_deduplicate_entities()` now merges entities that share a `(type, name)` **within one batch**, not just against the store. Before, two freshly-extracted same-name entities (e.g. `john.smith@a.com` and `john.smith@b.com` both inferring person "John Smith") were both saved while the relationship remap (keyed by name+type) collapsed onto whichever was saved last — orphaning one entity and mis-wiring its edges.
+- `ice_9/tools/metasploit.py` — `run()` removes the temporary `ice9_msf_*.rc` resource file after the run. It is written with `delete=False` (it must outlive `build_command` so msfconsole can read it) and was never cleaned up, leaving files containing RHOSTS/options/payload in the world-readable temp dir.
+- `ice_9/tools/bloodhound.py` — the `-d` domain is now run through `validate_target`, matching every other positional-target wrapper (rejects empty/flag-like/null-byte values).
+
+**Test results:** 328 passed (up from 314), 0 failures. `ruff check ice_9 tests` clean. New: `tests/test_tools/test_cme_parse.py` (10 — parser schema plus end-to-end tests that drive the real phase analyzers and confirm findings now fire); `base.py` timeout/deadlock covered via `test_execution.py`; extractor in-batch dedup, metasploit rc cleanup, and bloodhound reject cases added. An independent security review of the diff found no newly-introduced vulnerabilities.
+
+**Recommended next run focus:**
+- Category B: `PhaseModule.ai_plan` (`ice_9/phases/base.py`) is dead code — never called by `run()` or anywhere; remove or wire it in.
+- Category B: `db/store.py` `SCHEMA_VERSION=2` has no migration path for a pre-existing v1 DB (`CREATE TABLE IF NOT EXISTS` won't add columns); add a lightweight migration or document the reset.
+- Category A: add a per-run overall wall-clock cap for tools launched by autopilot, independent of the per-tool `timeout`, so a chain of slow tools can't run unbounded.
+
 ## 2026-10-12 (run 5) — Bloodhound Cypher Parameterization
 
 **Focus:** Category A/B — close a Cypher-injection vector and a post-removal cleanup.

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -304,54 +307,7 @@ class ToolWrapper(ABC):
         try:
             proc = subprocess.Popen(
                 exec_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                env=env,
-            )
-
-            stdout_lines: list[str] = []
-            batch: list[str] = []
-
-            for line in proc.stdout:
-                stdout_lines.append(line)
-                batch.append(line.rstrip())
-                if len(batch) >= 5:
-                    event_bus.emit(Event(
-                        type=EventType.TOOL_OUTPUT,
-                        data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
-                    ))
-                    batch = []
-
-            if batch:
-                event_bus.emit(Event(
-                    type=EventType.TOOL_OUTPUT,
-                    data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
-                ))
-
-            stderr_output = proc.stderr.read()
-            proc.wait(timeout=timeout)
-            completed = datetime.now(timezone.utc)
-
-            result = ToolResult(
-                tool=self.name,
-                target=target,
-                command=cmd,
-                return_code=proc.returncode,
-                stdout="".join(stdout_lines),
-                stderr=stderr_output,
-                started_at=started,
-                completed_at=completed,
-            )
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            completed = datetime.now(timezone.utc)
-            result = ToolResult(
-                tool=self.name,
-                target=target,
-                command=cmd,
-                return_code=-1,
-                stdout="",
-                stderr=f"Command timed out after {timeout}s",
-                started_at=started,
-                completed_at=completed,
+                env=env, start_new_session=True,
             )
         except FileNotFoundError:
             completed = datetime.now(timezone.utc)
@@ -365,6 +321,81 @@ class ToolWrapper(ABC):
                 started_at=started,
                 completed_at=completed,
             )
+        else:
+            # Enforce the timeout with a watchdog that kills the process, so a
+            # tool that never closes stdout (e.g. responder in listen mode)
+            # cannot hang the caller forever. Drain stderr on its own thread so
+            # a large stderr cannot deadlock against the stdout read.
+            timed_out = threading.Event()
+
+            def _kill_on_timeout() -> None:
+                timed_out.set()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    proc.kill()
+
+            watchdog = threading.Timer(timeout, _kill_on_timeout)
+            stderr_box = {"data": ""}
+
+            def _read_stderr() -> None:
+                with contextlib.suppress(Exception):
+                    stderr_box["data"] = proc.stderr.read()
+
+            err_thread = threading.Thread(target=_read_stderr, daemon=True)
+
+            stdout_lines: list[str] = []
+            batch: list[str] = []
+            watchdog.start()
+            err_thread.start()
+            try:
+                for line in proc.stdout:
+                    stdout_lines.append(line)
+                    batch.append(line.rstrip())
+                    if len(batch) >= 5:
+                        event_bus.emit(Event(
+                            type=EventType.TOOL_OUTPUT,
+                            data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
+                        ))
+                        batch = []
+
+                if batch:
+                    event_bus.emit(Event(
+                        type=EventType.TOOL_OUTPUT,
+                        data={"tool": self.name, "target": target, "lines": batch, "total_lines": len(stdout_lines)},
+                    ))
+
+                proc.wait()
+            finally:
+                watchdog.cancel()
+                err_thread.join()
+
+            completed = datetime.now(timezone.utc)
+
+            if timed_out.is_set():
+                note = f"Command timed out after {timeout}s"
+                err_text = stderr_box["data"]
+                result = ToolResult(
+                    tool=self.name,
+                    target=target,
+                    command=cmd,
+                    return_code=-1,
+                    stdout="".join(stdout_lines),
+                    stderr=f"{err_text}\n{note}".strip() if err_text else note,
+                    started_at=started,
+                    completed_at=completed,
+                )
+            else:
+                result = ToolResult(
+                    tool=self.name,
+                    target=target,
+                    command=cmd,
+                    return_code=proc.returncode,
+                    stdout="".join(stdout_lines),
+                    stderr=stderr_box["data"],
+                    started_at=started,
+                    completed_at=completed,
+                )
 
         # Parse output if successful
         if result.success:

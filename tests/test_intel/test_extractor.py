@@ -329,3 +329,47 @@ class TestDomainExtraction:
         entities, rels = extractor.extract_from_parsed("unknown_tool", {}, "target", CAMPAIGN_ID)
         assert entities == []
         assert rels == []
+
+
+class TestBatchDeduplication:
+    """Two freshly-extracted entities sharing (type, name) must merge into one,
+    with relationships remapped to the survivor (regression: they used to
+    collapse onto the last-saved entity, orphaning the other)."""
+
+    def test_deduplicate_entities_merges_same_type_name(self, extractor: EntityExtractor):
+        from ice_9.core.intel import Entity, EntityType
+        e1 = Entity(entity_type=EntityType.PERSON, name="John Smith",
+                    confidence=0.4, sources=["a"], campaign_id=CAMPAIGN_ID)
+        e2 = Entity(entity_type=EntityType.PERSON, name="John Smith",
+                    confidence=0.7, sources=["b"], campaign_id=CAMPAIGN_ID)
+        result = extractor._deduplicate_entities([e1, e2], CAMPAIGN_ID)
+        assert len(result) == 1
+        assert result[0].confidence == 0.7
+        assert set(result[0].sources) == {"a", "b"}
+
+    def test_same_person_from_two_emails_is_one_entity(
+        self, extractor: EntityExtractor, store: Store
+    ):
+        from ice_9.core.intel import EntityType, RelType
+        parsed = {
+            "emails": ["john.smith@a.com", "john.smith@b.com"],
+            "subdomains": [],
+            "ips": [],
+        }
+        entities, rels = extractor.extract_and_store(
+            "theharvester", parsed, "a.com", CAMPAIGN_ID
+        )
+        persons = [e for e in entities if e.entity_type == EntityType.PERSON
+                   and e.name == "John Smith"]
+        assert len(persons) == 1, "the two emails must infer a single person"
+        person_id = persons[0].id
+        # OWNS_EMAIL is person -> email; both edges must resolve to the single
+        # surviving person (none orphaned onto a dropped duplicate).
+        owns = [r for r in rels if r.rel_type == RelType.OWNS_EMAIL]
+        assert len(owns) == 2
+        assert all(r.source_id == person_id for r in owns)
+        assert len({r.target_id for r in owns}) == 2  # two distinct emails
+        # Persisted store agrees: exactly one such person.
+        stored = [e for e in store.get_entities(CAMPAIGN_ID)
+                  if e.entity_type == EntityType.PERSON and e.name == "John Smith"]
+        assert len(stored) == 1

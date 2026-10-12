@@ -56,3 +56,8 @@ class TestResolveQuery:
 def test_all_queries_resolve(name):
     cypher, params = BloodHoundWrapper._resolve_query(name, "corp.local")
     assert cypher and "domain_upper" in params
+
+
+def test_build_command_rejects_flag_like_domain():
+    with pytest.raises(ValueError):
+        BloodHoundWrapper().build_command("-foo")

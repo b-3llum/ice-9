@@ -221,3 +221,23 @@ class TestVerifyTls:
 
     def test_can_enable(self) -> None:
         assert MetasploitWrapper(verify_tls=True).verify_tls is True
+
+
+class TestResourceFileCleanup:
+    """build_command writes a temp .rc file (delete=False); run() must remove it."""
+
+    def test_run_removes_resource_file(self, msf: MetasploitWrapper, monkeypatch) -> None:
+        # Use a harmless real binary so run() executes and reaches cleanup.
+        monkeypatch.setattr(msf, "get_binary_path", lambda: "true")
+        captured: dict[str, str] = {}
+        orig = msf.build_command
+
+        def spy(target, **kw):
+            cmd = orig(target, **kw)
+            captured["rc"] = msf._rc_file.name
+            return cmd
+
+        monkeypatch.setattr(msf, "build_command", spy)
+        msf.run("1.2.3.4", module="exploit/windows/smb/ms17_010_eternalblue")
+        assert msf._rc_file is None
+        assert not os.path.exists(captured["rc"])

@@ -71,9 +71,26 @@ class EntityExtractor:
         return deduped_entities, deduped_rels
 
     def _deduplicate_entities(self, entities: list[Entity], campaign_id: str) -> list[Entity]:
-        """Merge new entities with existing ones by (type, name)."""
+        """Merge new entities with existing ones, and with each other, by (type, name).
+
+        Two freshly-extracted entities in the same batch that share a
+        (type, name) are merged into a single surviving entity, so the batch
+        yields exactly one entity per (type, name). Without this, both would be
+        saved and the relationship remap (keyed by name+type) would collapse
+        onto whichever was saved last, orphaning the other and mis-wiring edges.
+        """
         result = []
+        by_key: dict[tuple[Any, str], Entity] = {}
         for entity in entities:
+            key = (entity.entity_type, entity.name)
+            chosen = by_key.get(key)
+            if chosen is not None:
+                # Same (type, name) already seen in this batch — merge into it.
+                chosen.confidence = max(chosen.confidence, entity.confidence)
+                chosen.sources = list(set(chosen.sources + entity.sources))
+                chosen.properties.update(entity.properties)
+                chosen.updated_at = datetime.now(timezone.utc)
+                continue
             existing = self.store.find_entity(campaign_id, entity.entity_type, entity.name)
             if existing:
                 # Merge: keep higher confidence, union sources, merge properties
@@ -81,8 +98,10 @@ class EntityExtractor:
                 existing.sources = list(set(existing.sources + entity.sources))
                 existing.properties.update(entity.properties)
                 existing.updated_at = datetime.now(timezone.utc)
+                by_key[key] = existing
                 result.append(existing)
             else:
+                by_key[key] = entity
                 result.append(entity)
         return result
 

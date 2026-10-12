@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
+from ice_9.tools.base import (
+    ToolResult,
+    ToolWrapper,
+    validate_output_path,
+    validate_target,
+)
 
 # Pre-built Cypher queries for common attack path analysis
 CYPHER_QUERIES = {
@@ -81,7 +86,7 @@ class BloodHoundWrapper(ToolWrapper):
         cmd = [self.get_binary_path()]
 
         # Domain
-        cmd.extend(["-d", target])
+        cmd.extend(["-d", validate_target(target, "domain")])
 
         # Collection method
         method = kwargs.get("method", "all")
