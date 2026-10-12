@@ -1,5 +1,34 @@
 # Daily Changelog
 
+## 2026-10-12 (run 4) — Remove the TARS subsystem
+
+**Focus:** Removal — purge the TARS autonomous-agent subsystem from ice_9 entirely.
+
+TARS (the "Tactical Autonomous Reasoning System" agent) was a self-contained subsystem layered on top of the core campaign/phase/AI-team platform. It has been removed in full. The core platform — campaign management, ATT&CK phase modules, the multi-agent AI team, tool wrappers, REST API, dashboard, and reporting — is untouched.
+
+**Deleted (20 files):**
+
+- `ice_9/tars/` — the TARS package (`server.py` WebSocket server, `repl.py`, `bootstrap.py`, `__main__.py`, `__init__.py`).
+- `ice_9/ai/agent_loop.py` — the TARS plan/execute/reflect loop (imported only by `tars/`).
+- `ice_9/ai/memory.py` — the TARS working/episodic/semantic memory (`MemoryManager`, used only by the agent loop).
+- `ice_9/ai/router.py` — the TARS `ModelRouter` / `TaskComplexity` (used only by the agent loop).
+- `ice_9/ai/prompts/` — the TARS system/planner/reflector prompt templates (used only by the agent loop).
+- `ice_9/ai/rag/` — the TARS RAG subsystem (`RAGStore`, `ingest_directory`; used only by TARS memory/bootstrap).
+- `ice_9/tools/schema.py` — `ToolSchemaRegistry` / `build_default_registry`, the LLM tool-call schema layer used only by the agent loop.
+- `ice_9/tools/remote.py` — `RemoteHost` / `remote_exec`, used only by TARS bootstrap (distinct from `tools/execution.py`, the SSH campaign backend, which stays).
+- `ice_9/tools/python_exec.py` — the agent code executor (used only by TARS bootstrap), plus its test.
+- `ice_9/finetune/` — TARS fine-tuning artifacts (`Modelfile`, `axolotl_config.yaml`, `datasets/tars_training.jsonl`).
+
+**Also removed:**
+
+- `pyproject.toml`: the `tars` and `tars-repl` console-script entry points (`ice9` remains).
+- `README.md`: `tars/` dropped from the project-structure tree.
+- `MANUAL_PROMPT.md`: `tars` dropped from the services list.
+
+**Kept (shared, not TARS-only):** `ice_9/ai/{llm,providers,team,agents,analyzer,planner,orchestrator,json_utils}.py` and all tool wrappers. The removal set was derived by a reverse-dependency trace: every deleted module is imported only from within TARS, and every remaining module imports cleanly without it.
+
+**Verification:** every remaining `ice_9` submodule imports cleanly; the package reinstalls and only the `ice9` console script remains; 296 tests pass (the 13 `python_exec` tests were removed with the module), 0 failures; `ruff check ice_9 tests` clean; no live code references any removed module or symbol.
+
 ## 2026-10-12 (run 3) — Positional-Target Guard, python_exec Honesty, Metasploit Settings
 
 **Focus:** Category A/B — finishing the backlog (positional-target validation, guarded-executor honesty, metasploit config surfacing)

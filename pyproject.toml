@@ -34,8 +34,6 @@ dev = [
 
 [project.scripts]
 ice9 = "ice_9.main:app"
-tars = "ice_9.tars.server:main"
-tars-repl = "ice_9.tars.repl:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ice_9"]

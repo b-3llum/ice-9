@@ -315,7 +315,7 @@ ice9 report generate <id> --ai-summary --ai-narrative --output report.docx
 ## Project Structure
 
 ```
-ice_9/       core package — ai/ core/ db/ phases/ tools/ intel/ reporting/ tars/  + api.py, cli.py
+ice_9/       core package — ai/ core/ db/ phases/ tools/ intel/ reporting/  + api.py, cli.py
 dashboard/   React + TypeScript web UI (Vite)
 deploy/      production deployment (gunicorn config + guide)
 tests/       pytest suite

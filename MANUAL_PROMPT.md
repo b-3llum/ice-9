@@ -359,5 +359,5 @@ ice9 audit --help
 - Go tools are in `~/go/bin`, pip tools in `.venv/bin`
 - Tool resolution: ice_9 searches venv/bin, ~/go/bin, ~/.local/bin in addition to system PATH
 - Systemd services use full paths because nvm/venv aren't in the default systemd environment
-- `bellum-services` script manages all services (ollama, tars, finance-tracker, ice9-api, ice9-dashboard)
+- `bellum-services` script manages all services (ollama, finance-tracker, ice9-api, ice9-dashboard)
 - All 16 tools are currently installed and showing as available
