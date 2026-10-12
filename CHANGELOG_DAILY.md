@@ -1,5 +1,27 @@
 # Daily Changelog
 
+## 2026-10-12 — Tool Robustness: Relay Targeting, Arg Validation, ICE9_HOME
+
+**Focus:** Category A/B — Bugs, input validation, and config consistency (follow-on to the 2026-10-11 run's backlog)
+
+**Changes:**
+
+- `ice_9/tools/impacket_tools.py` — `NTLMRelayx.build_command`: replaced the fragile `target.endswith(".txt")` heuristic (which guessed `-tf` vs `-t` from the target's filename) with an explicit `targets_file` kwarg. Pass `targets_file` to relay against a host list (`-tf`); otherwise a single `target` is used (`-t`). A target that merely happens to end in `.txt` is no longer silently treated as a file list.
+- `ice_9/tools/custom.py` — `CustomToolWrapper`: added `_coerce_args()` validating `pre_args`/`post_args`/`args`. These are spread straight into the subprocess argv (no `shell=True`), so this is not about shell metacharacters — it rejects the footguns that otherwise fail far from their cause: a bare string (which `list.extend` splits into one arg per character), a non-string element (opaque `TypeError` at exec), and embedded null bytes (`ValueError` at exec). `None` coerces to an empty list; tuples are accepted.
+- `ice_9/config/settings.py` — the default `data_dir` now honours the `ICE9_HOME` environment variable, which the README documents as the data-dir override but the loader ignored. Resolved lazily via a `default_factory` so the override applies even when the variable is set after import. An explicit `data_dir` in the config file still wins; the config-file search path honours `ICE9_HOME` too. This matches `tools/base.ice9_data_dir()` from the previous run.
+
+**Test results:** 237 passed (up from 212), 0 failures. `ruff check ice_9 tests` clean.
+
+New test files: `tests/test_tools/test_custom.py` (12), `tests/test_tools/test_ntlmrelayx.py` (6), `tests/test_config/test_settings.py` (7).
+
+**Recommended next run focus:**
+- Category A: `metasploit.py` `_http = httpx.Client(verify=False)` disables TLS verification — fine for a self-signed localhost msfrpcd, but should become a config flag before any remote msfrpcd support lands.
+- Category B: `bloodhound.py` imports `re` inside the `parse_output` loop body rather than at module scope.
+- Category A: `responder.py` glob of `*.txt` log files and `crackmapexec.py` argument construction have not had an input-validation pass yet.
+
+**Issues noticed but not fixed:**
+- `NTLMRelayx` `targets_file` is an input path the tool reads, so it is intentionally NOT routed through `validate_output_path()` (that confines *output* writes); a targets list may legitimately live anywhere the operator keeps it.
+
 ## 2026-10-11 — Security: Output-Path Confinement + Tool Correctness
 
 **Focus:** Category A — Bugs and Security (path traversal, msfrpc hardening, GetNPUsers bug)

@@ -307,9 +307,13 @@ class NTLMRelayx(ImpacketTool):
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         cmd = [self.get_binary_path()]
 
-        # Target file or single target
-        if target.endswith(".txt"):
-            cmd.extend(["-tf", target])
+        # Target selection. An explicit targets_file (-tf) takes precedence
+        # over a single target (-t); pass targets_file to relay against a list
+        # of hosts. This replaces an earlier heuristic that guessed -tf vs -t
+        # from whether the target string ended in ".txt".
+        targets_file = kwargs.get("targets_file")
+        if targets_file:
+            cmd.extend(["-tf", targets_file])
         else:
             cmd.extend(["-t", target])
 

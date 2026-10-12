@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,18 @@ import yaml
 from pydantic import BaseModel, Field
 
 DEFAULT_DATA_DIR = Path.home() / ".ice9"
+
+
+def _default_data_dir() -> Path:
+    """Default ice_9 data directory.
+
+    Honours the ``ICE9_HOME`` environment variable (documented in the README
+    as the data-dir override), falling back to ``~/.ice9``. Resolved lazily at
+    construction time so the override is picked up even when the variable is
+    set after import.
+    """
+    env = os.environ.get("ICE9_HOME")
+    return Path(env) if env else DEFAULT_DATA_DIR
 
 
 class ProviderConfig(BaseModel):
@@ -41,7 +54,7 @@ class ExecutionConfig(BaseModel):
 class Settings(BaseModel):
     """Top-level ice_9 settings."""
 
-    data_dir: Path = DEFAULT_DATA_DIR
+    data_dir: Path = Field(default_factory=_default_data_dir)
     db_path: Path = Field(default=None)
     evidence_dir: Path = Field(default=None)
     audit_dir: Path = Field(default=None)
@@ -51,8 +64,6 @@ class Settings(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
 
     def model_post_init(self, __context: Any) -> None:
-        import os
-
         # Expand ~ in paths (YAML doesn't expand tilde)
         self.data_dir = self.data_dir.expanduser().resolve()
 
@@ -84,7 +95,7 @@ def load_settings(config_path: Path | None = None) -> Settings:
         [
             Path.cwd() / "config" / "ice9.yaml",
             Path.cwd() / "ice9.yaml",
-            DEFAULT_DATA_DIR / "config.yaml",
+            _default_data_dir() / "config.yaml",
         ]
     )
 
@@ -101,8 +112,6 @@ def load_settings(config_path: Path | None = None) -> Settings:
 
 def _resolve_env_vars(data: dict) -> None:
     """Recursively resolve ${ENV_VAR} references in string values."""
-    import os
-
     for key, value in data.items():
         if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
             env_name = value[2:-1]

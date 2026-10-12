@@ -29,28 +29,62 @@ class CustomToolWrapper(ToolWrapper):
         self.description = description or f"Custom tool: {binary}"
         self.att_ck_ids = att_ck_ids or []
 
+    @staticmethod
+    def _coerce_args(value: Any, name: str) -> list[str]:
+        """Validate a caller-supplied argument list.
+
+        Each of ``pre_args`` / ``post_args`` / ``args`` is spread straight into
+        the subprocess argv. There is no ``shell=True``, so this is not about
+        shell metacharacters — it guards the easy footguns that would otherwise
+        surface as confusing failures far from their cause:
+
+        - a bare string, which ``list.extend`` would silently split into one
+          argument per character;
+        - a non-string element (``int``, ``None``, a nested list), which the
+          subprocess layer rejects with an opaque ``TypeError`` at exec time;
+        - an embedded null byte, which exec rejects with ``ValueError``.
+
+        Returns a fresh list of validated strings (empty for ``None``).
+        """
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes)):
+            raise ValueError(
+                f"{name} must be a list of strings, not a bare "
+                f"{type(value).__name__} (it would be split into characters)"
+            )
+        try:
+            items = list(value)
+        except TypeError:
+            raise ValueError(f"{name} must be a list of strings") from None
+
+        validated: list[str] = []
+        for i, item in enumerate(items):
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"{name}[{i}] must be a string, got {type(item).__name__}"
+                )
+            if "\x00" in item:
+                raise ValueError(f"{name}[{i}] must not contain a null byte")
+            validated.append(item)
+        return validated
+
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         """Build command from binary + args + target."""
         cmd = [self.get_binary_path()]
 
         # Pre-target args
-        pre_args = kwargs.get("pre_args", [])
-        if pre_args:
-            cmd.extend(pre_args)
+        cmd.extend(self._coerce_args(kwargs.get("pre_args"), "pre_args"))
 
         # Target (can be empty for some tools)
         if target:
             cmd.append(target)
 
         # Post-target args
-        post_args = kwargs.get("post_args", [])
-        if post_args:
-            cmd.extend(post_args)
+        cmd.extend(self._coerce_args(kwargs.get("post_args"), "post_args"))
 
         # Generic args list
-        args = kwargs.get("args", [])
-        if args:
-            cmd.extend(args)
+        cmd.extend(self._coerce_args(kwargs.get("args"), "args"))
 
         return cmd
 
