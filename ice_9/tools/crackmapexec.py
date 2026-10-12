@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary
+from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary, validate_arg_list
+
+# Protocols supported by NetExec / CrackMapExec (the first positional arg).
+_VALID_PROTOCOLS = frozenset({
+    "smb", "winrm", "ldap", "ssh", "ftp", "mssql", "rdp", "vnc", "wmi", "nfs",
+})
+# Remote execution methods accepted by --exec-method.
+_VALID_EXEC_METHODS = frozenset({"smbexec", "wmiexec", "atexec", "mmcexec"})
 
 
 class CrackMapExecWrapper(ToolWrapper):
@@ -30,8 +37,14 @@ class CrackMapExecWrapper(ToolWrapper):
         """Build CrackMapExec command."""
         cmd = [self.get_binary_path()]
 
-        # Protocol
+        # Protocol (first positional). Validated against the known set so a
+        # stray or flag-like value can't slip into argv as the protocol.
         protocol = kwargs.get("protocol", "smb")
+        if protocol not in _VALID_PROTOCOLS:
+            raise ValueError(
+                f"Unknown protocol: {protocol!r} — "
+                f"valid protocols: {', '.join(sorted(_VALID_PROTOCOLS))}"
+            )
         cmd.append(protocol)
 
         # Target
@@ -84,6 +97,11 @@ class CrackMapExecWrapper(ToolWrapper):
         elif action == "exec":
             exec_cmd = kwargs.get("exec_command", "whoami")
             exec_method = kwargs.get("exec_method", "smbexec")
+            if exec_method not in _VALID_EXEC_METHODS:
+                raise ValueError(
+                    f"Unknown exec_method: {exec_method!r} — "
+                    f"valid methods: {', '.join(sorted(_VALID_EXEC_METHODS))}"
+                )
             cmd.extend(["-x", exec_cmd, "--exec-method", exec_method])
 
         # Spider
@@ -94,9 +112,7 @@ class CrackMapExecWrapper(ToolWrapper):
             cmd.extend(["--spider-depth", str(depth)])
 
         # Extra args
-        extra = kwargs.get("args", [])
-        if extra:
-            cmd.extend(extra)
+        cmd.extend(validate_arg_list(kwargs.get("args"), "args"))
 
         return cmd
 

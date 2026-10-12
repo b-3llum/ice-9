@@ -1,5 +1,27 @@
 # Daily Changelog
 
+## 2026-10-12 (run 2) — Input Validation: CrackMapExec, Responder, Shared Arg Guard
+
+**Focus:** Category A/B — input validation and config flags (the 2026-10-12 run's backlog)
+
+**Changes:**
+
+- `ice_9/tools/base.py`: promoted the argument-list guard into a shared `validate_arg_list(value, name)` (rejects bare strings that `extend` would char-split, non-string elements, and null bytes; `None` → `[]`). `ice_9/tools/custom.py` now calls it instead of its private `_coerce_args`, which is removed — one validator, used everywhere argv lists are accepted.
+- `ice_9/tools/crackmapexec.py`: added `_VALID_PROTOCOLS` and `_VALID_EXEC_METHODS` allowlists. The `protocol` positional and the `--exec-method` value are rejected unless known (a flag-like `protocol="--x"` can no longer slip into argv as the protocol), and the `args` passthrough is routed through `validate_arg_list`.
+- `ice_9/tools/responder.py`: the `target` interface is now validated against `^[A-Za-z0-9][A-Za-z0-9_.:@-]*\Z` before use, rejecting empty values, leading dashes, whitespace, embedded metacharacters, and trailing newlines, while accepting real names (`eth0`, `eth0.100`, `br-lan`, `eth0:1`). The `*.txt` log glob was reviewed and left as-is: it reads Responder's own hardcoded log directories, not caller input, so it is not an injection surface.
+- `ice_9/tools/metasploit.py`: added a configurable `verify_tls` kwarg (default `False`, preserving the self-signed-localhost behaviour) wired into the `httpx.Client`, so a remote msfrpcd can be reached with TLS verification on.
+- `ice_9/tools/bloodhound.py`: hoisted an `import re` out of the `parse_output` loop body to module scope (no behaviour change).
+
+**Test results:** 268 passed (up from 237), 0 failures. `ruff check ice_9 tests` clean. New: `tests/test_tools/test_crackmapexec.py` (13); interface cases added to `test_responder.py`; `verify_tls` cases in `test_metasploit.py`; `validate_arg_list` cases in `test_output_path.py`. An independent security review of the diff found no newly-introduced vulnerabilities.
+
+**Recommended next run focus:**
+- Category A: `crackmapexec.py` `target` positional (line ~51) is appended without validation — a target beginning with `-` could be parsed by nxc as an option. A shared leading-dash guard for positional targets across wrappers would be consistent.
+- Category A: `nuclei.py`, `kerb_map.py`, and `python_exec.py` have not had an input-validation pass yet.
+- Category B: surface `metasploit.verify_tls` through `config/settings.py` so it is configurable without constructing the wrapper by hand.
+
+**Issues noticed but not fixed:**
+- `responder.py` log parsing trusts the content of files in Responder's log dirs; those are tool-generated, so this is acceptable, but the parser does no size bound (out of scope — DoS-class).
+
 ## 2026-10-12 — Tool Robustness: Relay Targeting, Arg Validation, ICE9_HOME
 
 **Focus:** Category A/B — Bugs, input validation, and config consistency (follow-on to the 2026-10-11 run's backlog)

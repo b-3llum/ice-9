@@ -14,6 +14,11 @@ _VALID_SERVICES = frozenset({
     "imap", "ldap", "dns", "dcerpc", "winrm", "nbtns", "llmnr", "mdns",
 })
 
+# A network-interface name: starts alphanumeric, then the usual interface
+# characters (eth0, wlan0, en0, eth0.100 VLANs, tun0, br-lan). Validated so the
+# value handed to `-I` can't be empty, contain a null byte, or look like a flag.
+_INTERFACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*\Z")
+
 
 RESPONDER_PATHS = [
     Path("/opt/Responder/Responder.py"),
@@ -63,6 +68,11 @@ class ResponderWrapper(ToolWrapper):
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         """Build Responder command. Target is the network interface (e.g. eth0)."""
+        if not _INTERFACE_RE.match(target or ""):
+            raise ValueError(
+                f"Invalid network interface: {target!r} — expected a name like "
+                "'eth0' (alphanumeric start; letters, digits, '_.:@-' after)"
+            )
         binary = self.get_binary_path()
         # If it's a .py file, run it with python3
         if binary.endswith(".py"):

@@ -37,6 +37,7 @@ class MetasploitWrapper(ToolWrapper):
         password: str = "msf",
         ssl: bool = True,
         username: str = "msf",
+        verify_tls: bool = False,
     ) -> None:
         super().__init__()
         self.host = host
@@ -44,8 +45,12 @@ class MetasploitWrapper(ToolWrapper):
         self.username = username
         self.password = password
         self.ssl = ssl
+        # TLS verification is off by default because the common deployment is a
+        # self-signed msfrpcd on localhost. Set verify_tls=True (and point at a
+        # properly-certified endpoint) when talking to a remote msfrpcd.
+        self.verify_tls = verify_tls
         self._token: str | None = None
-        self._http = httpx.Client(timeout=30, verify=False)
+        self._http = httpx.Client(timeout=30, verify=verify_tls)
 
     @property
     def base_url(self) -> str:

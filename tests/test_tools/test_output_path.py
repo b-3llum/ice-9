@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from ice_9.tools.base import ice9_data_dir, validate_output_path
+from ice_9.tools.base import ice9_data_dir, validate_arg_list, validate_output_path
 from ice_9.tools.bloodhound import BloodHoundWrapper
 from ice_9.tools.subfinder import SubfinderWrapper
 from ice_9.tools.theharvester import TheHarvesterWrapper
@@ -95,3 +95,26 @@ class TestWrappersRejectTraversal:
     def test_bloodhound_default_is_allowed(self):
         cmd = BloodHoundWrapper().build_command("corp.local")
         assert "/tmp/bloodhound" in cmd
+
+
+class TestValidateArgList:
+    def test_none_is_empty(self):
+        assert validate_arg_list(None) == []
+
+    def test_list_passthrough(self):
+        assert validate_arg_list(["-a", "-b"], "args") == ["-a", "-b"]
+
+    def test_tuple_accepted(self):
+        assert validate_arg_list(("-a", "-b")) == ["-a", "-b"]
+
+    def test_bare_string_rejected(self):
+        with pytest.raises(ValueError, match="list of strings"):
+            validate_arg_list("-rf", "pre_args")
+
+    def test_non_string_element_rejected(self):
+        with pytest.raises(ValueError, match=r"args\[1\] must be a string"):
+            validate_arg_list(["ok", 2], "args")
+
+    def test_null_byte_rejected(self):
+        with pytest.raises(ValueError, match="null byte"):
+            validate_arg_list(["a\x00b"])

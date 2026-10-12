@@ -137,6 +137,48 @@ def validate_output_path(
     )
 
 
+
+def validate_arg_list(value: Any, name: str = "args") -> list[str]:
+    """Validate a caller-supplied list of subprocess arguments.
+
+    Argument lists (``args``, ``pre_args``, ``post_args``, …) are spread
+    straight into an argv list with no ``shell=True``, so this is not about
+    shell metacharacters. It guards the footguns that would otherwise surface
+    as confusing failures far from their cause:
+
+    - a bare string, which ``list.extend`` would silently split into one
+      argument per character;
+    - a non-string element (``int``, ``None``, a nested list), which the
+      subprocess layer rejects with an opaque ``TypeError`` at exec time;
+    - an embedded null byte, which exec rejects with ``ValueError``.
+
+    Returns a fresh list of validated strings (empty for ``None``). Raises
+    ``ValueError`` with a message naming *name* and the offending element.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        raise ValueError(
+            f"{name} must be a list of strings, not a bare "
+            f"{type(value).__name__} (it would be split into characters)"
+        )
+    try:
+        items = list(value)
+    except TypeError:
+        raise ValueError(f"{name} must be a list of strings") from None
+
+    validated: list[str] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, str):
+            raise ValueError(
+                f"{name}[{i}] must be a string, got {type(item).__name__}"
+            )
+        if "\x00" in item:
+            raise ValueError(f"{name}[{i}] must not contain a null byte")
+        validated.append(item)
+    return validated
+
+
 @dataclass
 class ToolResult:
     """Result from a tool execution."""

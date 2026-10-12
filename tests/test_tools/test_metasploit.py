@@ -211,3 +211,13 @@ class TestAuthenticate:
         )
         assert msf._authenticate() is False
         assert msf._token is None
+
+
+class TestVerifyTls:
+    """TLS verification is configurable and off by default (self-signed localhost)."""
+
+    def test_default_is_off(self) -> None:
+        assert MetasploitWrapper().verify_tls is False
+
+    def test_can_enable(self) -> None:
+        assert MetasploitWrapper(verify_tls=True).verify_tls is True

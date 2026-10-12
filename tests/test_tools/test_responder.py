@@ -67,3 +67,25 @@ def test_parse_output_ntlmv2(mock_tool_result):
     parsed = tool.parse_output(result)
     assert parsed["total_hashes"] == 2
     assert len(parsed["ntlmv2_hashes"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Interface (target) validation
+# ---------------------------------------------------------------------------
+
+
+def test_build_command_accepts_vlan_interface():
+    cmd = ResponderWrapper().build_command("eth0.100")
+    assert cmd[cmd.index("-I") + 1] == "eth0.100"
+
+
+@pytest.mark.parametrize("iface", ["wlan0", "en0", "tun0", "br-lan", "eth0:1"])
+def test_build_command_accepts_valid_interfaces(iface):
+    cmd = ResponderWrapper().build_command(iface)
+    assert iface in cmd
+
+
+@pytest.mark.parametrize("bad", ["", "-A", "eth0; rm -rf /", "a b", "../eth0", "eth0\n"])
+def test_build_command_rejects_bad_interface(bad):
+    with pytest.raises(ValueError, match="Invalid network interface"):
+        ResponderWrapper().build_command(bad)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
@@ -127,7 +128,6 @@ class BloodHoundWrapper(ToolWrapper):
             for key in collected:
                 if key in lower and ("found" in lower or "done" in lower):
                     # Try to extract count
-                    import re
                     nums = re.findall(r"(\d+)", line)
                     if nums:
                         collected[key] = int(nums[0])
