@@ -44,3 +44,19 @@ class TestLoadSettings:
         cfg.write_text("providers: {}\n")
         s = load_settings(cfg)
         assert s.data_dir == (tmp_path / "env-home").resolve()
+
+
+class TestMetasploitConfig:
+    def test_defaults(self):
+        mc = Settings().metasploit
+        assert mc.host == "127.0.0.1"
+        assert mc.port == 55553
+        assert mc.username == "msf"
+        assert mc.ssl is True
+        assert mc.verify_tls is False
+
+    def test_override(self):
+        s = Settings(metasploit={"verify_tls": True, "host": "10.0.0.9", "port": 1234})
+        assert s.metasploit.verify_tls is True
+        assert s.metasploit.host == "10.0.0.9"
+        assert s.metasploit.port == 1234

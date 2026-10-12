@@ -52,3 +52,25 @@ def test_tool_get_info():
     assert info["name"] == "theharvester"
     assert info["binary"] == "theHarvester"
     assert "T1589" in info["att_ck_ids"]
+
+
+def test_register_defaults_metasploit_default_verify_tls_off():
+    from ice_9.tools.custom import _registry, get_tool, register_defaults
+    _registry.clear()
+    register_defaults()
+    msf = get_tool("metasploit")
+    assert msf is not None
+    assert msf.verify_tls is False
+    assert msf.host == "127.0.0.1"
+
+
+def test_register_defaults_applies_metasploit_settings():
+    from ice_9.config.settings import Settings
+    from ice_9.tools.custom import _registry, get_tool, register_defaults
+    _registry.clear()
+    settings = Settings(metasploit={"verify_tls": True, "host": "10.0.0.9", "username": "op"})
+    register_defaults(settings)
+    msf = get_tool("metasploit")
+    assert msf.verify_tls is True
+    assert msf.host == "10.0.0.9"
+    assert msf.username == "op"

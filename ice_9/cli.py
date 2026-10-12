@@ -222,7 +222,7 @@ def campaign_auto(
     from ice_9.ai.orchestrator import CampaignOrchestrator
     from ice_9.tools.custom import register_defaults
 
-    register_defaults()
+    register_defaults(load_settings())
 
     store = _get_store()
     audit = _get_audit()
@@ -294,7 +294,7 @@ def phase_run(
     from ice_9.phases import get_phase_modules
     from ice_9.tools.custom import register_defaults
 
-    register_defaults()
+    register_defaults(load_settings())
 
     store = _get_store()
     audit = _get_audit()
@@ -777,7 +777,7 @@ def tool_list() -> None:
 
     from ice_9.tools.custom import list_tools, register_defaults
 
-    register_defaults()
+    register_defaults(load_settings())
     tools = list_tools()
 
     table = Table(title="Registered Tools", border_style="red")
@@ -815,7 +815,7 @@ def tool_run(
     from ice_9.core.models import Task, TaskStatus
     from ice_9.tools.custom import get_tool, register_defaults
 
-    register_defaults()
+    register_defaults(load_settings())
     tool = get_tool(tool_name)
     if not tool:
         print_error(f"Unknown tool: {tool_name}. Run 'ice9 tool list' to see available tools.")
@@ -893,7 +893,7 @@ def tool_add_custom(
     """Register a custom tool."""
     from ice_9.tools.custom import CustomToolWrapper, register_defaults, register_tool
 
-    register_defaults()
+    register_defaults(load_settings())
     tool = CustomToolWrapper(
         name=name,
         binary=binary,

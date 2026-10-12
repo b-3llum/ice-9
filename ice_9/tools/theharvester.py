@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path, validate_target
 
 
 class TheHarvesterWrapper(ToolWrapper):
@@ -17,6 +17,7 @@ class TheHarvesterWrapper(ToolWrapper):
     att_ck_ids = ["T1589", "T1589.002", "T1590.002"]
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
+        target = validate_target(target)
         cmd = [self.get_binary_path(), "-d", target]
 
         source = kwargs.get("source", "all")

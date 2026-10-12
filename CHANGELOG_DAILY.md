@@ -1,5 +1,25 @@
 # Daily Changelog
 
+## 2026-10-12 (run 3) — Positional-Target Guard, python_exec Honesty, Metasploit Settings
+
+**Focus:** Category A/B — finishing the backlog (positional-target validation, guarded-executor honesty, metasploit config surfacing)
+
+**Changes:**
+
+- `ice_9/tools/base.py`: added `validate_target(target, name)` — rejects empty values, null bytes, and a leading `-` (which a tool would parse as a flag instead of the target). Applied to the positional/target of `nmap`, `nuclei`, `amass`, `subfinder`, `theharvester`, `crackmapexec`, and `kerb_map` (as `--dc`). `nmap`, `nuclei`, and `kerb_map` now also route their `args` passthrough through `validate_arg_list`, and `nuclei` validates each comma-separated `severity` level against the known set.
+- `ice_9/tools/python_exec.py`: the agent code executor is now honest about what it is. The docstring states plainly that the blocklist is a best-effort foot-gun screen, NOT a security boundary (a substring screen cannot contain adversarial code — that needs OS-level isolation). The screen itself was tightened: matching is now whitespace-insensitive and case-insensitive (`os . system(` and `Popen` are caught), both quote styles of sensitive host paths are covered, and more destructive calls are listed (`os.popen`, `subprocess.check_*`, `os.rmdir`, `compile`, generic `__import__`, `importlib.import_module`, `pty.spawn`).
+- `ice_9/config/settings.py`: added a `MetasploitConfig` section (`host`, `port`, `username`, `password`, `ssl`, `verify_tls`; defaults match the self-signed-localhost msfrpcd) and a `metasploit` field on `Settings`. `ice_9/tools/custom.py` `register_defaults(settings=None)` builds the Metasploit wrapper from it when settings are supplied (else defaults), and `api.py` / `cli.py` / `ai/orchestrator.py` now pass their loaded settings through — so `verify_tls` (and the rest) is configurable from `ice9.yaml` without constructing the wrapper by hand.
+
+**Test results:** 308 passed (up from 268), 0 failures. `ruff check ice_9 tests` clean. New: `tests/test_tools/test_target_validation.py` (19), `tests/test_tools/test_python_exec.py` (13); `MetasploitConfig` cases in `test_config/test_settings.py`; `register_defaults(settings)` cases in `test_registry.py`. An independent security review of the diff found no newly-introduced vulnerabilities.
+
+**Recommended next run focus:**
+- Category A (important): `python_exec.py` is a best-effort screen only. If the TARS agent ever runs code from a less-trusted source, replace the blocklist with real OS-level isolation (a locked-down container, seccomp, or nsjail/firejail) and a resource/time cap.
+- Category A: `kerb_map.py` passes `--password` on the argv, visible in the host process list; consider an env-var or stdin hand-off for secrets across the impacket/crackmapexec/kerb-map wrappers.
+- Category B: `bloodhound.query_neo4j` builds Cypher by string replacement of `{domain_upper}` — parameterise via the neo4j driver instead.
+
+**Issues noticed but not fixed:**
+- Credentials on the command line (argv) are visible to other local users via the process list across several wrappers; this is inherent to the underlying tools' CLIs and is out of scope for a per-wrapper change.
+
 ## 2026-10-12 (run 2) — Input Validation: CrackMapExec, Responder, Shared Arg Guard
 
 **Focus:** Category A/B — input validation and config flags (the 2026-10-12 run's backlog)

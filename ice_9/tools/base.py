@@ -179,6 +179,31 @@ def validate_arg_list(value: Any, name: str = "args") -> list[str]:
     return validated
 
 
+
+def validate_target(target: str, name: str = "target") -> str:
+    """Validate a positional target handed to an offensive tool.
+
+    Many wrappers append *target* as a bare positional argument (a host, IP,
+    CIDR, URL, or domain). With no ``shell=True`` this is not shell injection,
+    but a value beginning with ``-`` would be parsed by the tool as an option
+    rather than the target, silently changing what the scan does. Reject that,
+    along with empty values and null bytes. Returns the target unchanged.
+    """
+    if target is None:
+        raise ValueError(f"{name} must not be empty")
+    text = str(target)
+    if not text.strip():
+        raise ValueError(f"{name} must not be empty")
+    if "\x00" in text:
+        raise ValueError(f"{name} must not contain a null byte")
+    if text.startswith("-"):
+        raise ValueError(
+            f"{name} {text!r} must not start with '-' "
+            "(it would be parsed as a command-line flag, not the target)"
+        )
+    return text
+
+
 @dataclass
 class ToolResult:
     """Result from a tool execution."""

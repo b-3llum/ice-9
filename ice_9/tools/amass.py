@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_target
 
 
 class AmassWrapper(ToolWrapper):
@@ -17,6 +17,7 @@ class AmassWrapper(ToolWrapper):
     att_ck_ids = ["T1590", "T1590.002", "T1596"]
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
+        target = validate_target(target)
         cmd = [self.get_binary_path(), "enum", "-d", target]
 
         passive = kwargs.get("passive", True)

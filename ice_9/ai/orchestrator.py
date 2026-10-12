@@ -10,6 +10,7 @@ from ice_9.ai.agents import AgentRole
 from ice_9.ai.analyzer import analyze_findings
 from ice_9.ai.planner import generate_engagement_plan
 from ice_9.ai.team import TeamOrchestrator
+from ice_9.config.settings import load_settings
 from ice_9.core.audit import AuditLogger
 from ice_9.core.models import PHASE_NAMES, Campaign, PhaseStatus, PhaseType
 from ice_9.db.store import Store
@@ -88,7 +89,7 @@ class CampaignOrchestrator:
         """
         from ice_9.phases import get_phase_module
 
-        register_defaults()
+        register_defaults(load_settings())
         run_result = AutoRunResult()
 
         from ice_9.core.events import Event, EventType, event_bus

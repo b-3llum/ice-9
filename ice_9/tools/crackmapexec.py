@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, resolve_binary, validate_arg_list
+from ice_9.tools.base import (
+    ToolResult,
+    ToolWrapper,
+    resolve_binary,
+    validate_arg_list,
+    validate_target,
+)
 
 # Protocols supported by NetExec / CrackMapExec (the first positional arg).
 _VALID_PROTOCOLS = frozenset({
@@ -47,8 +53,9 @@ class CrackMapExecWrapper(ToolWrapper):
             )
         cmd.append(protocol)
 
-        # Target
-        cmd.append(target)
+        # Target (positional) — reject flag-like values so a '-'-prefixed
+        # value can't be parsed by nxc as an option instead of the target.
+        cmd.append(validate_target(target))
 
         # Authentication
         username = kwargs.get("username")

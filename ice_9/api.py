@@ -331,7 +331,7 @@ async def api_run_phase(campaign_id: str, phase_type: str):
             raise HTTPException(409, f"Phase '{running}' already running for this campaign")
         _running_phases[campaign_id] = pt.value
 
-    register_defaults()
+    register_defaults(get_settings())
     phase_modules = get_phase_modules()
     module_class = phase_modules.get(pt)
     if not module_class:
@@ -453,7 +453,7 @@ async def api_audit_log(limit: int = 50, campaign_id: str | None = None):
 async def api_list_tools():
     from ice_9.tools.custom import list_tools, register_defaults
 
-    register_defaults()
+    register_defaults(get_settings())
     return [t.get_info() for t in list_tools()]
 
 

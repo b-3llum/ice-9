@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ice_9.tools.base import ToolResult, ToolWrapper, validate_arg_list
+
+if TYPE_CHECKING:
+    from ice_9.config.settings import Settings
 
 
 class CustomToolWrapper(ToolWrapper):
@@ -95,8 +98,13 @@ def list_tools() -> list[ToolWrapper]:
     return list(_registry.values())
 
 
-def register_defaults() -> None:
-    """Register all built-in tool wrappers."""
+def register_defaults(settings: Settings | None = None) -> None:
+    """Register all built-in tool wrappers.
+
+    When *settings* is given, the Metasploit wrapper is built from
+    ``settings.metasploit`` (host, port, auth, TLS verification); otherwise
+    it uses its own defaults (self-signed localhost msfrpcd).
+    """
     from ice_9.tools.amass import AmassWrapper
     from ice_9.tools.bloodhound import BloodHoundWrapper
     from ice_9.tools.crackmapexec import CrackMapExecWrapper
@@ -120,7 +128,18 @@ def register_defaults() -> None:
     register_tool(NucleiWrapper())
     register_tool(KerbMapWrapper())
     register_tool(BloodHoundWrapper())
-    register_tool(MetasploitWrapper())
+    if settings is not None and getattr(settings, "metasploit", None) is not None:
+        mc = settings.metasploit
+        register_tool(MetasploitWrapper(
+            host=mc.host,
+            port=mc.port,
+            password=mc.password,
+            ssl=mc.ssl,
+            username=mc.username,
+            verify_tls=mc.verify_tls,
+        ))
+    else:
+        register_tool(MetasploitWrapper())
     register_tool(CrackMapExecWrapper())
     register_tool(SecretsDump())
     register_tool(GetNPUsers())

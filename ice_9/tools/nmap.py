@@ -5,7 +5,12 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import (
+    ToolResult,
+    ToolWrapper,
+    validate_arg_list,
+    validate_target,
+)
 
 # Scan profiles — common presets
 SCAN_PROFILES = {
@@ -29,7 +34,8 @@ class NmapWrapper(ToolWrapper):
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
         profile = kwargs.get("profile", "standard")
-        extra_args = kwargs.get("args", [])
+        extra_args = validate_arg_list(kwargs.get("args"), "args")
+        target = validate_target(target)
 
         cmd = [self.get_binary_path()]
 

@@ -51,6 +51,22 @@ class ExecutionConfig(BaseModel):
     key_file: str | None = None
 
 
+class MetasploitConfig(BaseModel):
+    """Connection settings for the Metasploit RPC service (msfrpcd).
+
+    Defaults match the self-signed localhost service that MetasploitWrapper
+    assumes. Set verify_tls=True (and point host at a properly-certified
+    endpoint) when talking to a remote msfrpcd over TLS.
+    """
+
+    host: str = "127.0.0.1"
+    port: int = 55553
+    username: str = "msf"
+    password: str = "msf"
+    ssl: bool = True
+    verify_tls: bool = False
+
+
 class Settings(BaseModel):
     """Top-level ice_9 settings."""
 
@@ -62,6 +78,7 @@ class Settings(BaseModel):
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     agents: dict[str, AgentConfig] = Field(default_factory=dict)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    metasploit: MetasploitConfig = Field(default_factory=MetasploitConfig)
 
     def model_post_init(self, __context: Any) -> None:
         # Expand ~ in paths (YAML doesn't expand tilde)

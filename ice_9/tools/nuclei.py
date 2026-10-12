@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import (
+    ToolResult,
+    ToolWrapper,
+    validate_arg_list,
+    validate_target,
+)
 
 SEVERITY_MAP = {
     "critical": "critical",
@@ -29,15 +34,23 @@ class NucleiWrapper(ToolWrapper):
         cmd = [self.get_binary_path()]
 
         # Target
-        cmd.extend(["-target", target])
+        cmd.extend(["-target", validate_target(target)])
 
         # JSON output for structured parsing
         cmd.append("-jsonl")
 
-        # Severity filter
+        # Severity filter — validate each comma-separated level against the
+        # known set so a stray value can't be injected as the flag's operand.
         severity = kwargs.get("severity")
         if severity:
-            cmd.extend(["-severity", severity])
+            levels = [s.strip().lower() for s in str(severity).split(",") if s.strip()]
+            invalid = [lvl for lvl in levels if lvl not in SEVERITY_MAP]
+            if invalid:
+                raise ValueError(
+                    f"Unknown nuclei severity {invalid!r} — "
+                    f"valid: {', '.join(sorted(SEVERITY_MAP))}"
+                )
+            cmd.extend(["-severity", ",".join(levels)])
 
         # Template tags
         tags = kwargs.get("tags")
@@ -58,9 +71,7 @@ class NucleiWrapper(ToolWrapper):
         cmd.extend(["-concurrency", str(concurrency)])
 
         # Extra args
-        extra = kwargs.get("args", [])
-        if extra:
-            cmd.extend(extra)
+        cmd.extend(validate_arg_list(kwargs.get("args"), "args"))
 
         # Silent mode — only results
         cmd.append("-silent")

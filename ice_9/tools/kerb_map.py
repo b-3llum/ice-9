@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_arg_list, validate_target
 
 KERB_MAP_PATH = Path.home() / "kerb-map"
 
@@ -60,7 +60,7 @@ class KerbMapWrapper(ToolWrapper):
         cmd = ["python3", str(KERB_MAP_PATH / "kerb-map.py")]
 
         # Domain controller / target
-        cmd.extend(["--dc", target])
+        cmd.extend(["--dc", validate_target(target, "dc")])
 
         # Domain
         domain = kwargs.get("domain", "")
@@ -94,9 +94,7 @@ class KerbMapWrapper(ToolWrapper):
             cmd.append("--aggressive")
 
         # Extra args
-        extra = kwargs.get("args", [])
-        if extra:
-            cmd.extend(extra)
+        cmd.extend(validate_arg_list(kwargs.get("args"), "args"))
 
         return cmd
 

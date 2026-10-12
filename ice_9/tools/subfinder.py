@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
+from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path, validate_target
 
 
 class SubfinderWrapper(ToolWrapper):
@@ -16,6 +16,7 @@ class SubfinderWrapper(ToolWrapper):
     att_ck_ids = ["T1590.002", "T1596"]
 
     def build_command(self, target: str, **kwargs: Any) -> list[str]:
+        target = validate_target(target)
         cmd = [self.get_binary_path(), "-d", target, "-silent"]
 
         sources = kwargs.get("sources")
