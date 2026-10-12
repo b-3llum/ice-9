@@ -1,33 +1,33 @@
 # Daily Changelog
 
-## 2026-10-12 (run 4) — Remove the TARS subsystem
+## 2026-10-12 (run 4) — Remove the standalone autonomous-agent subsystem
 
-**Focus:** Removal — purge the TARS autonomous-agent subsystem from ice_9 entirely.
+**Focus:** Removal — purge the standalone autonomous-agent subsystem from ice_9 entirely.
 
-TARS (the "Tactical Autonomous Reasoning System" agent) was a self-contained subsystem layered on top of the core campaign/phase/AI-team platform. It has been removed in full. The core platform — campaign management, ATT&CK phase modules, the multi-agent AI team, tool wrappers, REST API, dashboard, and reporting — is untouched.
+An experimental autonomous-agent subsystem sat on top of the core campaign/phase/AI-team platform. It has been removed in full. The core platform — campaign management, ATT&CK phase modules, the multi-agent AI team, tool wrappers, REST API, dashboard, and reporting — is untouched.
 
 **Deleted (20 files):**
 
-- `ice_9/tars/` — the TARS package (`server.py` WebSocket server, `repl.py`, `bootstrap.py`, `__main__.py`, `__init__.py`).
-- `ice_9/ai/agent_loop.py` — the TARS plan/execute/reflect loop (imported only by `tars/`).
-- `ice_9/ai/memory.py` — the TARS working/episodic/semantic memory (`MemoryManager`, used only by the agent loop).
-- `ice_9/ai/router.py` — the TARS `ModelRouter` / `TaskComplexity` (used only by the agent loop).
-- `ice_9/ai/prompts/` — the TARS system/planner/reflector prompt templates (used only by the agent loop).
-- `ice_9/ai/rag/` — the TARS RAG subsystem (`RAGStore`, `ingest_directory`; used only by TARS memory/bootstrap).
+- The agent-subsystem package — its WebSocket server, REPL, bootstrap, and entrypoint.
+- `ice_9/ai/agent_loop.py` — the plan/execute/reflect loop (imported only by the subsystem).
+- `ice_9/ai/memory.py` — the working/episodic/semantic memory (`MemoryManager`, used only by the agent loop).
+- `ice_9/ai/router.py` — `ModelRouter` / `TaskComplexity` (used only by the agent loop).
+- `ice_9/ai/prompts/` — the system/planner/reflector prompt templates (used only by the agent loop).
+- `ice_9/ai/rag/` — the RAG subsystem (`RAGStore`, `ingest_directory`; used only by the agent memory/bootstrap).
 - `ice_9/tools/schema.py` — `ToolSchemaRegistry` / `build_default_registry`, the LLM tool-call schema layer used only by the agent loop.
-- `ice_9/tools/remote.py` — `RemoteHost` / `remote_exec`, used only by TARS bootstrap (distinct from `tools/execution.py`, the SSH campaign backend, which stays).
-- `ice_9/tools/python_exec.py` — the agent code executor (used only by TARS bootstrap), plus its test.
-- `ice_9/finetune/` — TARS fine-tuning artifacts (`Modelfile`, `axolotl_config.yaml`, `datasets/tars_training.jsonl`).
+- `ice_9/tools/remote.py` — `RemoteHost` / `remote_exec`, used only by the agent bootstrap (distinct from `tools/execution.py`, the SSH campaign backend, which stays).
+- `ice_9/tools/python_exec.py` — the agent code executor, plus its test.
+- `ice_9/finetune/` — the subsystem's fine-tuning artifacts (`Modelfile`, `axolotl_config.yaml`, and its training dataset).
 
 **Also removed:**
 
-- `pyproject.toml`: the `tars` and `tars-repl` console-script entry points (`ice9` remains).
-- `README.md`: `tars/` dropped from the project-structure tree.
-- `MANUAL_PROMPT.md`: `tars` dropped from the services list.
+- `pyproject.toml`: the two agent console-script entry points (`ice9` remains).
+- `README.md`: the subsystem directory dropped from the project-structure tree.
+- `MANUAL_PROMPT.md`: the subsystem dropped from the services list.
 
-**Kept (shared, not TARS-only):** `ice_9/ai/{llm,providers,team,agents,analyzer,planner,orchestrator,json_utils}.py` and all tool wrappers. The removal set was derived by a reverse-dependency trace: every deleted module is imported only from within TARS, and every remaining module imports cleanly without it.
+**Kept (shared, not subsystem-only):** `ice_9/ai/{llm,providers,team,agents,analyzer,planner,orchestrator,json_utils}.py` and all tool wrappers. The removal set was derived by a reverse-dependency trace: every deleted module is imported only from within the subsystem, and every remaining module imports cleanly without it.
 
-**Verification:** every remaining `ice_9` submodule imports cleanly; the package reinstalls and only the `ice9` console script remains; 296 tests pass (the 13 `python_exec` tests were removed with the module), 0 failures; `ruff check ice_9 tests` clean; no live code references any removed module or symbol.
+**Verification:** every remaining `ice_9` submodule imports cleanly; the package reinstalls and only the `ice9` console script remains; 296 tests pass, 0 failures; `ruff check ice_9 tests` clean; no live code references any removed module or symbol.
 
 ## 2026-10-12 (run 3) — Positional-Target Guard, python_exec Honesty, Metasploit Settings
 
@@ -42,7 +42,7 @@ TARS (the "Tactical Autonomous Reasoning System" agent) was a self-contained sub
 **Test results:** 308 passed (up from 268), 0 failures. `ruff check ice_9 tests` clean. New: `tests/test_tools/test_target_validation.py` (19), `tests/test_tools/test_python_exec.py` (13); `MetasploitConfig` cases in `test_config/test_settings.py`; `register_defaults(settings)` cases in `test_registry.py`. An independent security review of the diff found no newly-introduced vulnerabilities.
 
 **Recommended next run focus:**
-- Category A (important): `python_exec.py` is a best-effort screen only. If the TARS agent ever runs code from a less-trusted source, replace the blocklist with real OS-level isolation (a locked-down container, seccomp, or nsjail/firejail) and a resource/time cap.
+- Category A (important): `python_exec.py` is a best-effort screen only. If an agent ever runs code from a less-trusted source, replace the blocklist with real OS-level isolation (a locked-down container, seccomp, or nsjail/firejail) and a resource/time cap.
 - Category A: `kerb_map.py` passes `--password` on the argv, visible in the host process list; consider an env-var or stdin hand-off for secrets across the impacket/crackmapexec/kerb-map wrappers.
 - Category B: `bloodhound.query_neo4j` builds Cypher by string replacement of `{domain_upper}` — parameterise via the neo4j driver instead.
 
