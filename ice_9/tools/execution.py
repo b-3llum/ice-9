@@ -13,7 +13,7 @@ import os
 import shlex
 from dataclasses import dataclass
 
-# Standard non-interactive SSH options (also used by tools/remote.py).
+# Standard non-interactive SSH options for the remote execution backend.
 _SSH_OPTS = [
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "ConnectTimeout=10",

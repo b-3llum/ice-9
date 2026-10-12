@@ -1,5 +1,16 @@
 # Daily Changelog
 
+## 2026-10-12 (run 5) — Bloodhound Cypher Parameterization
+
+**Focus:** Category A/B — close a Cypher-injection vector and a post-removal cleanup.
+
+**Changes:**
+
+- `ice_9/tools/bloodhound.py`: `query_neo4j` no longer interpolates the campaign `domain` into the Cypher string (`cypher.replace("{domain_upper}", f"'{domain_upper}'")`). The two domain-scoped queries now use the driver's native `$domain_upper` parameter, bound at `session.run(cypher, **params)`, so a crafted domain cannot alter the query structure. A testable `BloodHoundWrapper._resolve_query(name, domain)` helper returns `(cypher, params)` (or `(None, {})` for an unknown name); unused parameters are ignored by the driver.
+- `ice_9/tools/execution.py`: fixed a stale comment that referenced `tools/remote.py`, which was removed with the agent subsystem.
+
+**Test results:** 314 passed (up from 296), 0 failures. `ruff check ice_9 tests` clean. New: `tests/test_tools/test_bloodhound.py` (18 — command building, query resolution, and a regression test proving a malicious domain stays in the bound parameter value rather than the query text).
+
 ## 2026-10-12 (run 4) — Remove the standalone autonomous-agent subsystem
 
 **Focus:** Removal — purge the standalone autonomous-agent subsystem from ice_9 entirely.

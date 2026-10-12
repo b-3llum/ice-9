@@ -10,7 +10,7 @@ from ice_9.tools.base import ToolResult, ToolWrapper, validate_output_path
 # Pre-built Cypher queries for common attack path analysis
 CYPHER_QUERIES = {
     "domain_admins": (
-        "MATCH (g:Group {name: {domain_upper}}) "
+        "MATCH (g:Group {name: $domain_upper}) "
         "MATCH p=shortestPath((u:User)-[*1..]->(g)) "
         "WHERE u<>g RETURN p"
     ),
@@ -29,7 +29,7 @@ CYPHER_QUERIES = {
         "RETURN c.name, c.operatingsystem"
     ),
     "shortest_path_to_da": (
-        "MATCH (u:User),(g:Group {name: {domain_upper}}) "
+        "MATCH (u:User),(g:Group {name: $domain_upper}) "
         "MATCH p=shortestPath((u)-[*1..]->(g)) "
         "RETURN u.name, length(p) AS hops ORDER BY hops ASC LIMIT 20"
     ),
@@ -137,6 +137,24 @@ class BloodHoundWrapper(ToolWrapper):
             "raw_lines": lines[-20:],  # Last 20 lines
         }
 
+    @staticmethod
+    def _resolve_query(
+        query_name: str, domain: str = ""
+    ) -> tuple[str | None, dict[str, Any]]:
+        """Resolve a pre-built query name to (cypher, params).
+
+        Returns ``(None, {})`` for an unknown name. The domain is returned as a
+        bound parameter value (``domain_upper``) rather than interpolated into
+        the query text, so it cannot alter the query structure.
+        """
+        cypher = CYPHER_QUERIES.get(query_name)
+        if cypher is None:
+            return None, {}
+        domain_upper = (
+            f"DOMAIN ADMINS@{domain.upper()}" if domain else "DOMAIN ADMINS@UNKNOWN"
+        )
+        return cypher, {"domain_upper": domain_upper}
+
     def query_neo4j(self, query_name: str, domain: str = "") -> dict[str, Any]:
         """Run a pre-built Cypher query against Neo4j."""
         try:
@@ -144,22 +162,22 @@ class BloodHoundWrapper(ToolWrapper):
         except ImportError:
             return {"error": "neo4j Python driver not installed. Run: pip install neo4j"}
 
-        cypher = CYPHER_QUERIES.get(query_name)
-        if not cypher:
+        cypher, params = self._resolve_query(query_name, domain)
+        if cypher is None:
             return {
                 "error": f"Unknown query: {query_name}",
                 "available": list(CYPHER_QUERIES.keys()),
             }
-
-        domain_upper = f"DOMAIN ADMINS@{domain.upper()}" if domain else "DOMAIN ADMINS@UNKNOWN"
-        cypher = cypher.replace("{domain_upper}", f"'{domain_upper}'")
 
         try:
             driver = GraphDatabase.driver(
                 self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)
             )
             with driver.session() as session:
-                result = session.run(cypher)
+                # Bind domain_upper as a query parameter; the driver escapes it,
+                # so a crafted domain cannot inject Cypher. Unused parameters
+                # (queries without $domain_upper) are ignored by the driver.
+                result = session.run(cypher, **params)
                 records = [dict(record) for record in result]
             driver.close()
             return {"query": query_name, "results": records, "count": len(records)}
